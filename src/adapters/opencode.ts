@@ -82,7 +82,34 @@ async function install(ctx: AdapterContext): Promise<void> {
   const config = await readJsonFile(configFile);
   const agentRegistry =
     (config.agent as Record<string, unknown> | undefined) ?? {};
-  agentRegistry[name] = {};
+
+  const entry: Record<string, unknown> = {};
+
+  // Always write description
+  entry.description = agent.frontmatter.description;
+
+  // Write mode (defaults to "subagent" if not specified)
+  entry.mode = agent.frontmatter.mode ?? "subagent";
+
+  // Write color if available (from settings first, then frontmatter)
+  const color = agent.settings?.color ?? agent.frontmatter.color;
+  if (color) entry.color = color;
+
+  // Write model if available
+  const model = agent.settings?.model ?? agent.frontmatter.model;
+  if (model) entry.model = model;
+
+  // Write temperature if in settings
+  if (agent.settings?.temperature !== undefined) {
+    entry.temperature = agent.settings.temperature;
+  }
+
+  // Merge any opencode-specific overrides from settings
+  if (agent.settings?.opencode) {
+    Object.assign(entry, agent.settings.opencode);
+  }
+
+  agentRegistry[name] = entry;
   config.agent = agentRegistry;
   await writeJsonFile(configFile, config);
 }

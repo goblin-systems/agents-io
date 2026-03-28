@@ -21,16 +21,24 @@ export async function listCommand(): Promise<void> {
     if (projectEntries.length > 0) {
       log.info("Project agents:");
       for (const [name, agent] of projectEntries) {
-        const tools = chalk.dim(`(${agent.installedFor.join(", ")})`);
-        log.dim(`  ${chalk.bold(name)} — ${agent.source} ${tools}`);
+        const platforms = chalk.dim(`(${agent.platforms.join(", ")})`);
+        const sourceLabel =
+          agent.sourceType === "local"
+            ? `${agent.sourceUrl} ${chalk.yellow("(local)")}`
+            : agent.source;
+        log.dim(`  ${chalk.bold(name)} — ${sourceLabel} ${platforms}`);
       }
     }
 
     if (globalEntries.length > 0) {
       log.info("Global agents:");
       for (const [name, agent] of globalEntries) {
-        const tools = chalk.dim(`(${agent.installedFor.join(", ")})`);
-        log.dim(`  ${chalk.bold(name)} — ${agent.source} ${tools}`);
+        const platforms = chalk.dim(`(${agent.platforms.join(", ")})`);
+        const sourceLabel =
+          agent.sourceType === "local"
+            ? `${agent.sourceUrl} ${chalk.yellow("(local)")}`
+            : agent.source;
+        log.dim(`  ${chalk.bold(name)} — ${sourceLabel} ${platforms}`);
       }
     }
   } catch (err) {

@@ -2,11 +2,11 @@
 
 ## Project overview
 
-`agnts` is a CLI tool that installs AI coding agents from GitHub repositories into local tool configurations. It fetches an `agent.md` file from a repo, parses its YAML frontmatter + markdown body, and writes the appropriate files for each supported tool (OpenCode, Claude Code, Codex, Kiro).
+`agnts` is a CLI tool that installs AI coding agents from GitHub repositories into local tool configurations. It fetches an `agent.md` file from a GitHub repo or local filesystem path, parses its YAML frontmatter + markdown body, and writes the appropriate files for each supported tool (OpenCode, Claude Code, Codex, Kiro).
 
 - **Runtime:** Bun + TypeScript (strict), ESM modules
 - **Build:** `bun build` produces a single-file Node-compatible bundle at `dist/index.js`
-- **Production dependencies (3 only):** commander, chalk, gray-matter
+- **Production dependencies (4 only):** commander, chalk, gray-matter, @clack/prompts
 
 ## Development commands
 
@@ -23,24 +23,27 @@ bun run src/index.ts add owner/repo       # Test the add command
 bun run src/index.ts list                 # Test the list command
 bun run src/index.ts remove agent-name    # Test the remove command
 bun run src/index.ts init test-agent      # Test the init scaffold
+bun run src/index.ts update                   # Test the update command
+bun run src/index.ts add ./path/to/agent      # Test local path install
 ```
 
-Always run `bun run typecheck` after making changes. There is no test suite yet.
+Always run `bun run typecheck` and `bun test` after making changes.
 
 ## Directory structure
 
 ```
 src/
-  index.ts              CLI entry point — commander program with 4 commands
+  index.ts              CLI entry point — commander program with 5 commands (add, list, remove, init, update)
   types.ts              Shared TypeScript interfaces (Adapter, ParsedAgent, LockFile, etc.)
   commands/
     add.ts              `agnts add <source>` — fetch + install + register in lock file
     list.ts             `agnts list` — display installed agents (project + global)
     remove.ts           `agnts remove <name>` — uninstall from adapters + deregister
     init.ts             `agnts init [name]` — scaffold a new agent template directory
+    update.ts           `agnts update [name]` — re-fetch, compare hash, re-install if changed
   core/
     parse.ts            gray-matter frontmatter parser with validation (name, description, mode, tools)
-    fetch.ts            Downloads agent.md from GitHub raw URLs (tries main then master branch)
+    fetch.ts            Fetches agent.md from GitHub or local paths (tries main then master for GitHub)
     registry.ts         Reads/writes agnts-lock.json (SHA-256 hashing, CRUD operations)
   adapters/
     opencode.ts         Writes agents/{name}.md + updates opencode.json
@@ -49,7 +52,7 @@ src/
     kiro.ts             Writes .kiro/agents/{name}.json
   utils/
     logger.ts           chalk-based structured logger with info, success, warn, error, dim methods
-    paths.ts            Tool config path resolution + findProjectRoot (walks up looking for markers)
+    paths.ts            Platform config path resolution + findProjectRoot (walks up looking for markers)
 ```
 
 ## Architecture
@@ -75,7 +78,7 @@ Every adapter must implement this interface (defined in `src/types.ts`):
 
 ```typescript
 interface Adapter {
-  name: ToolTarget;                                                    // "opencode" | "claude-code" | "codex" | "kiro"
+  name: Platform;                                                      // "opencode" | "claude-code" | "codex" | "kiro"
   detect(projectDir: string): Promise<boolean>;                        // Check if this tool is present
   install(ctx: AdapterContext): Promise<void>;                         // Write agent files for this tool
   uninstall(name: string, projectDir: string, global: boolean): Promise<void>;  // Remove agent files
@@ -83,6 +86,14 @@ interface Adapter {
 ```
 
 Adapters are collected into arrays in `src/commands/add.ts` and `src/commands/remove.ts`. When adding a new adapter, create the file in `src/adapters/` and add it to both arrays.
+
+### Fetch layer
+
+The `fetchAgent()` function in `src/core/fetch.ts` returns a `FetchResult` wrapping the `ParsedAgent` with `sourceType` ("github" | "local") and `resolvedSource`. Local paths are auto-detected (starts with `.`, `/`, contains `\`, or Windows drive letter). GitHub sources try `main` then `master` branches.
+
+### Interactive prompts
+
+The `add` command uses `@clack/prompts` for interactive scope and tool selection. Prompts are skipped when CLI flags are provided (`--global`, `--platform`), keeping the CLI CI-friendly. Import `select`, `multiselect`, `isCancel`, and `cancel` from `@clack/prompts`. Always handle `isCancel` and exit with `process.exit(0)` (cancellation is not an error).
 
 ### Agent format
 
@@ -111,7 +122,7 @@ Markdown body (the system prompt). Required — cannot be empty.
 
 ### Lock file
 
-`agnts-lock.json` tracks installed agents. Located at the project root (local) or `~/.config/agnts/` (global). Managed by `src/core/registry.ts`. Contains SHA-256 content hashes (first 12 hex chars) for change detection.
+`agnts-lock.json` tracks installed agents. Located at the project root (local) or `~/.config/agnts/` (global). Managed by `src/core/registry.ts`. Contains SHA-256 content hashes (first 12 hex chars) for change detection. Lock file entries use `platforms` (array of `Platform` values) and `platformHashes` (per-platform content hashes). Entries written with old keys (`installedFor`, `toolHashes`) are migrated transparently on read.
 
 ## Coding standards
 
@@ -168,25 +179,39 @@ Markdown body (the system prompt). Required — cannot be empty.
 2. Implement the `Adapter` interface: `detect`, `install`, `uninstall`.
 3. Export the adapter as the default export.
 4. Import and add it to the `adapters` array in both `src/commands/add.ts` and `src/commands/remove.ts`.
-5. Add the tool name to the `ToolTarget` union type in `src/types.ts`.
+5. Add the platform name to the `Platform` union type in `src/types.ts`.
 6. If the tool has specific frontmatter overrides, add the shape to `AgentFrontmatter` in `src/types.ts`.
 7. Add path resolution for the tool in `src/utils/paths.ts` (`getProjectDir` and `getGlobalDir`).
 
-## Testing guidance
+## Testing
 
-No test framework is configured yet. When adding tests:
+The test suite uses `bun:test`. Run tests with:
 
-- Use `bun:test` (built into Bun).
-- Unit test priorities:
-  1. `src/core/parse.ts` — frontmatter validation (valid/invalid names, missing fields, mode values, tools shape).
-  2. Adapter `install` / `uninstall` — verify correct files are written/removed.
-  3. `src/core/registry.ts` — CRUD operations on the lock file.
-- Integration test: `init` command creates correct directory structure and file contents.
+```bash
+bun test
+```
+
+Tests live in `tests/` mirroring the `src/` structure:
+
+- `tests/helpers.ts` — shared test utilities (`buildAgentContent`, `makeTempDir`, `cleanTempDir`)
+- `tests/core/parse.test.ts` — frontmatter parsing and validation
+- `tests/core/registry.test.ts` — lock file CRUD operations
+- `tests/adapters/opencode.test.ts` — OpenCode adapter install/uninstall
+- `tests/adapters/claude-code.test.ts` — Claude Code adapter install/uninstall
+- `tests/adapters/codex.test.ts` — Codex adapter section management
+- `tests/adapters/kiro.test.ts` — Kiro adapter install/uninstall
+
+All adapter and registry tests use real temp directories (no mocking). Tests clean up after themselves.
+
+When adding new functionality, add corresponding tests. Priority areas for new tests:
+- Integration tests for the `init` command (scaffold output verification)
+- Integration tests for the `update` command
+- Fetch layer tests (local path resolution — network tests should be skipped)
 
 ## Do NOT
 
 - **Add dependencies** without strong justification — this is a lightweight CLI with only 3 production deps.
-- **Add interactive prompts** — the CLI is non-interactive by design.
+- **Add prompts outside of commands** — interactive prompts belong in command files only, using `@clack/prompts`.
 - **Use `console.log` directly** — use the logger from `src/utils/logger.js`.
 - **Use sync file I/O** — except `existsSync` in `paths.ts`.
 - **Break the Adapter interface contract** — all adapters must conform to the same interface.

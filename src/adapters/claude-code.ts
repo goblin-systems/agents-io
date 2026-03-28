@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile, unlink, access } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
-import type { Adapter, AdapterContext } from "../types.js";
+import matter from "gray-matter";
+import type { Adapter, AdapterContext, ParsedAgent } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,11 +16,6 @@ async function exists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** Title-case a string (first letter of every word upper-cased). */
-function titleCase(s: string): string {
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Capitalise only the first letter of a string. */
@@ -79,23 +75,46 @@ interface ClaudeSettings {
   [key: string]: unknown;
 }
 
-/** Format the markdown file content for a Claude Code agent. */
+/** Format the markdown file content for a Claude Code agent with native frontmatter. */
 function formatAgentMarkdown(
-  name: string,
-  description: string,
-  body: string,
+  agent: ParsedAgent,
 ): string {
-  const lines: string[] = [
-    `# ${titleCase(name)}`,
-    "",
-    description,
-    "",
-    "---",
-    "",
-    body,
-  ];
+  const fm = agent.frontmatter;
+  const settings = agent.settings;
 
-  return lines.join("\n").trimEnd() + "\n";
+  // Build Claude Code native frontmatter
+  const data: Record<string, unknown> = {
+    name: fm.name,
+    description: fm.description,
+  };
+
+  // Map tools to Claude Code format (comma-separated string of capitalized tool names)
+  if (fm.tools && Object.keys(fm.tools).length > 0) {
+    const allowed = Object.entries(fm.tools)
+      .filter(([, v]) => v)
+      .map(([k]) => capFirst(k));
+    if (allowed.length > 0) {
+      data.tools = allowed.join(", ");
+    }
+  }
+
+  // Add model if available
+  const ccOverrides = settings?.["claude-code"] as Record<string, unknown> | undefined;
+  const model = ccOverrides?.model ?? settings?.model ?? fm.model;
+  if (model) data.model = model;
+
+  // Merge claude-code specific overrides from settings (except model, already handled)
+  if (ccOverrides) {
+    for (const [key, value] of Object.entries(ccOverrides)) {
+      if (key !== "model" && key !== "permissions") {
+        data[key] = value;
+      }
+    }
+  }
+
+  // Write as markdown with frontmatter using gray-matter
+  const markdown = matter.stringify("\n" + agent.body + "\n", data);
+  return markdown;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +135,7 @@ async function detect(projectDir: string): Promise<boolean> {
 
 async function install(ctx: AdapterContext): Promise<void> {
   const { agent, projectDir, global: isGlobal } = ctx;
-  const { frontmatter, body } = agent;
-  const name = frontmatter.name;
+  const name = agent.frontmatter.name;
 
   const claudeDir = resolveClaudeDir(projectDir, isGlobal);
   const agentsDir = join(claudeDir, "agents");
@@ -127,27 +145,27 @@ async function install(ctx: AdapterContext): Promise<void> {
   // 1. Ensure agents directory exists
   await mkdir(agentsDir, { recursive: true });
 
-  // 2. Write the agent markdown (no YAML frontmatter)
-  const content = formatAgentMarkdown(name, frontmatter.description, body);
+  // 2. Write the agent markdown with native YAML frontmatter
+  const content = formatAgentMarkdown(agent);
   await writeFile(agentFile, content, "utf-8");
 
-  // 3. Build the settings entry
+  // 3. Build the settings entry (permissions only)
   const relativePath = `.claude/agents/${name}.md`;
 
   const entry: AgentEntry = {
-    description: frontmatter.description,
+    description: agent.frontmatter.description,
     prompt: relativePath,
   };
 
   // Resolve permissions: explicit claude-code override takes priority
-  const explicit = frontmatter["claude-code"]?.permissions;
+  const explicit = agent.frontmatter["claude-code"]?.permissions;
 
   if (explicit) {
     entry.permissions = {};
     if (explicit.allow?.length) entry.permissions.allow = explicit.allow;
     if (explicit.deny?.length) entry.permissions.deny = explicit.deny;
-  } else if (frontmatter.tools && Object.keys(frontmatter.tools).length > 0) {
-    const derived = derivePermissions(frontmatter.tools);
+  } else if (agent.frontmatter.tools && Object.keys(agent.frontmatter.tools).length > 0) {
+    const derived = derivePermissions(agent.frontmatter.tools);
     entry.permissions = {};
     if (derived.allow.length) entry.permissions.allow = derived.allow;
     if (derived.deny.length) entry.permissions.deny = derived.deny;

@@ -49,7 +49,6 @@ export async function initCommand(name?: string): Promise<void> {
   const frontmatter = {
     name: agentName,
     description: "TODO: Describe what this agent does",
-    mode: "subagent",
     tools: {
       read: true,
       glob: true,
@@ -63,28 +62,30 @@ export async function initCommand(name?: string): Promise<void> {
   const body = `
 # ${title}
 
-You are a [role description]. Your job is to [primary responsibility].
+You are a [role]. Your job is to [primary responsibility].
 
-## Your Expertise
+Focus on the task, explain key decisions briefly, and keep your output actionable.
 
-- [Skill or knowledge area 1]
-- [Skill or knowledge area 2]
-- [Skill or knowledge area 3]
+## What You Do
 
-## Your Approach
+- [Primary responsibility]
+- [Important constraint]
+- [Quality bar]
 
-1. [First step in your methodology]
-2. [Second step]
-3. [Third step]
+## Approach
+
+1. Inspect the relevant context first.
+2. Make the smallest correct change.
+3. Validate the result before finishing.
 
 ## Constraints
 
-- [What you should NOT do]
-- [Boundaries to respect]
+- Do not invent requirements.
+- Do not make unrelated changes.
 
 ## Output Format
 
-[Describe the expected output structure]
+[Describe the response structure you expect]
 `;
 
   const agentMd = matter.stringify(body, frontmatter);
@@ -96,22 +97,20 @@ You are a [role description]. Your job is to [primary responsibility].
 
 > TODO: Describe what this agent does
 
-## Install
+## Files
+
+- \`agent.md\` is the required agent definition file.
+- Optional: add \`agent.json\` later if you need color, model, or tool-specific settings.
+
+## Publish
 
 \`\`\`bash
-npx agnts add {github-user}/${agentName}
+npx agnts add yourname/${agentName}
 \`\`\`
 
 ## What it does
 
 TODO: Explain the agent's purpose and capabilities.
-
-## Supported tools
-
-- [x] OpenCode
-- [x] Claude Code
-- [ ] Codex
-- [ ] Kiro
 `;
 
   await writeFile(readmePath, readme, "utf-8");
@@ -120,4 +119,5 @@ TODO: Explain the agent's purpose and capabilities.
 
   log.success(`Created agent template at ./${agentName}/`);
   log.dim(`Edit ${agentName}/agent.md to define your agent, then push to GitHub.`);
+  log.dim(`Add ${agentName}/agent.json later if you need optional tool-specific settings.`);
 }

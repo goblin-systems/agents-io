@@ -93,14 +93,28 @@ async function install(ctx: AdapterContext): Promise<void> {
     prompt: body,
   };
 
-  // Resolve tools and kiro-specific overrides
-  const kiroOverride = frontmatter.kiro;
+  // Resolve tools and kiro-specific overrides (frontmatter first, then settings)
+  const kiroFmOverride = frontmatter.kiro;
+  const kiroSettingsOverride = agent.settings?.kiro as Record<string, unknown> | undefined;
 
-  if (kiroOverride) {
-    if (kiroOverride.model) data.model = kiroOverride.model;
-    if (kiroOverride.tools) data.tools = kiroOverride.tools;
-    if (kiroOverride.allowedTools) data.allowedTools = kiroOverride.allowedTools;
-    if (kiroOverride.hooks) data.hooks = kiroOverride.hooks;
+  if (kiroFmOverride) {
+    if (kiroFmOverride.model) data.model = kiroFmOverride.model;
+    if (kiroFmOverride.tools) data.tools = kiroFmOverride.tools;
+    if (kiroFmOverride.allowedTools) data.allowedTools = kiroFmOverride.allowedTools;
+    if (kiroFmOverride.hooks) data.hooks = kiroFmOverride.hooks;
+  }
+
+  // Settings overrides take precedence over frontmatter overrides
+  if (kiroSettingsOverride) {
+    if (kiroSettingsOverride.model) data.model = kiroSettingsOverride.model as string;
+    if (kiroSettingsOverride.tools) data.tools = kiroSettingsOverride.tools as string[];
+    if (kiroSettingsOverride.allowedTools) data.allowedTools = kiroSettingsOverride.allowedTools as string[];
+    if (kiroSettingsOverride.hooks) data.hooks = kiroSettingsOverride.hooks as Record<string, unknown>;
+  }
+
+  // Model from top-level settings as fallback (if not set by kiro-specific overrides)
+  if (!data.model && agent.settings?.model) {
+    data.model = agent.settings.model;
   }
 
   // If no explicit kiro tools override, derive from generic tools map

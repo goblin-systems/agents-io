@@ -1,13 +1,13 @@
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { existsSync } from "fs";
-import type { ToolTarget } from "../types.js";
+import type { Platform } from "../types.js";
 
 const PROJECT_MARKERS = [".git", "package.json", "opencode.json"];
 
-/** Resolve the project-level config directory for a tool. */
-export function getProjectDir(tool: ToolTarget, projectRoot: string): string {
-  switch (tool) {
+/** Resolve the project-level config directory for a platform. */
+export function getProjectDir(platform: Platform, projectRoot: string): string {
+  switch (platform) {
     case "opencode":
       return projectRoot;
     case "claude-code":
@@ -19,10 +19,10 @@ export function getProjectDir(tool: ToolTarget, projectRoot: string): string {
   }
 }
 
-/** Resolve the global config directory for a tool. */
-export function getGlobalDir(tool: ToolTarget): string {
+/** Resolve the global config directory for a platform. */
+export function getGlobalDir(platform: Platform): string {
   const home = homedir();
-  switch (tool) {
+  switch (platform) {
     case "opencode":
       return join(home, ".config", "opencode");
     case "claude-code":

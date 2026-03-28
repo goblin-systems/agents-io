@@ -27,6 +27,21 @@ export function getLockFilePath(
   return join(projectRoot ?? process.cwd(), LOCK_FILENAME);
 }
 
+/**
+ * Migrate a raw parsed agent entry from old key names to the current schema.
+ * Old lock files used `installedFor` and `toolHashes`; new ones use `platforms`
+ * and `platformHashes`. Both fields are kept transparently for backward compat.
+ */
+function migrateEntry(entry: InstalledAgent & Record<string, unknown>): InstalledAgent {
+  if (!entry.platforms && entry["installedFor"]) {
+    entry.platforms = entry["installedFor"] as InstalledAgent["platforms"];
+  }
+  if (!entry.platformHashes && entry["toolHashes"]) {
+    entry.platformHashes = entry["toolHashes"] as InstalledAgent["platformHashes"];
+  }
+  return entry;
+}
+
 /** Read the lock file. Return empty lock file if it doesn't exist. */
 export async function readLockFile(
   global: boolean,
@@ -35,7 +50,14 @@ export async function readLockFile(
   const filePath = getLockFilePath(global, projectRoot);
   try {
     const raw = await readFile(filePath, "utf-8");
-    return JSON.parse(raw) as LockFile;
+    const parsed = JSON.parse(raw) as LockFile;
+    // Migrate any entries that still use the old field names
+    for (const name of Object.keys(parsed.agents)) {
+      parsed.agents[name] = migrateEntry(
+        parsed.agents[name] as InstalledAgent & Record<string, unknown>,
+      );
+    }
+    return parsed;
   } catch {
     return emptyLockFile();
   }

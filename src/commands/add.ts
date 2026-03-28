@@ -1,4 +1,6 @@
+import { select, multiselect, isCancel, cancel } from "@clack/prompts";
 import { fetchAgent } from "../core/fetch.js";
+import { discoverAgents } from "../core/discover.js";
 import { hashContent, addAgent } from "../core/registry.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
@@ -6,7 +8,7 @@ import opencodeAdapter from "../adapters/opencode.js";
 import claudeCodeAdapter from "../adapters/claude-code.js";
 import codexAdapter from "../adapters/codex.js";
 import kiroAdapter from "../adapters/kiro.js";
-import type { Adapter, ToolTarget } from "../types.js";
+import type { Adapter, Platform } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Adapter registry
@@ -14,8 +16,122 @@ import type { Adapter, ToolTarget } from "../types.js";
 
 const adapters: Adapter[] = [opencodeAdapter, claudeCodeAdapter, codexAdapter, kiroAdapter];
 
-function getAdapter(name: ToolTarget): Adapter | undefined {
+function getAdapter(name: Platform): Adapter | undefined {
   return adapters.find((a) => a.name === name);
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+async function promptScope(options: AddOptions, projectRoot: string): Promise<boolean> {
+  if (options.global !== undefined) {
+    return options.global;
+  }
+
+  const scope = await select({
+    message: "Where should this agent be installed?",
+    options: [
+      { value: "local" as const, label: "Project (local)", hint: "recommended" },
+      { value: "global" as const, label: "Global (user-level)" },
+    ],
+    initialValue: "local" as const,
+  });
+
+  if (isCancel(scope)) {
+    cancel("Installation cancelled.");
+    process.exit(0);
+  }
+
+  return scope === "global";
+}
+
+async function promptTargets(options: AddOptions, projectRoot: string): Promise<Adapter[]> {
+  if (options.platform) {
+    const adapter = getAdapter(options.platform as Platform);
+    if (!adapter) {
+      log.error(`Unknown platform: ${options.platform}`);
+      process.exit(1);
+    }
+    return [adapter];
+  }
+
+  const detectedPlatforms: Platform[] = [];
+  for (const adapter of adapters) {
+    if (await adapter.detect(projectRoot)) {
+      detectedPlatforms.push(adapter.name);
+    }
+  }
+
+  const selected = await multiselect({
+    message: "Which platforms should this agent be installed for?",
+    options: [
+      { value: "opencode" as const, label: "OpenCode", hint: detectedPlatforms.includes("opencode") ? "detected" : undefined },
+      { value: "claude-code" as const, label: "Claude Code", hint: detectedPlatforms.includes("claude-code") ? "detected" : undefined },
+      { value: "codex" as const, label: "Codex", hint: detectedPlatforms.includes("codex") ? "detected" : undefined },
+      { value: "kiro" as const, label: "Kiro", hint: detectedPlatforms.includes("kiro") ? "detected" : undefined },
+    ],
+    initialValues: ["opencode"],
+    required: true,
+  });
+
+  if (isCancel(selected)) {
+    cancel("Installation cancelled.");
+    process.exit(0);
+  }
+
+  return (selected as Platform[]).map((p) => {
+    const adapter = getAdapter(p);
+    if (!adapter) {
+      log.error(`Unknown platform: ${p}`);
+      process.exit(1);
+    }
+    return adapter;
+  });
+}
+
+async function installAgent(
+  agent: import("../types.js").ParsedAgent,
+  targets: Adapter[],
+  projectRoot: string,
+  isGlobal: boolean,
+  resolvedSource: string,
+  sourceType: "github" | "local",
+  agentPath: string,
+): Promise<void> {
+  const platformNames: Platform[] = [];
+
+  for (const adapter of targets) {
+    log.info(`Installing ${agent.frontmatter.name} for ${adapter.name}...`);
+    await adapter.install({
+      agent,
+      projectDir: projectRoot,
+      global: isGlobal,
+    });
+    platformNames.push(adapter.name);
+    log.success(`Installed ${agent.frontmatter.name} for ${adapter.name}`);
+  }
+
+  await addAgent(
+    agent.frontmatter.name,
+    {
+      source: resolvedSource,
+      sourceType,
+      sourceUrl:
+        sourceType === "github"
+          ? `https://github.com/${resolvedSource}`
+          : resolvedSource,
+      agentPath,
+      installedAt: new Date().toISOString(),
+      platforms: platformNames,
+      hash: hashContent(agent.raw),
+      platformHashes: Object.fromEntries(
+        platformNames.map((platform) => [platform, hashContent(agent.raw)]),
+      ) as Partial<Record<Platform, string>>,
+    },
+    isGlobal,
+    projectRoot,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -23,7 +139,7 @@ function getAdapter(name: ToolTarget): Adapter | undefined {
 // ---------------------------------------------------------------------------
 
 export interface AddOptions {
-  tool?: string;
+  platform?: string;
   global?: boolean;
   path?: string;
 }
@@ -33,73 +149,154 @@ export async function addCommand(
   options: AddOptions,
 ): Promise<void> {
   try {
-    // 1. Fetch agent
-    log.info(`Fetching agent from ${source}...`);
-    const agent = await fetchAgent(source, { path: options.path });
-    const { name, description } = agent.frontmatter;
+    // 1. If --path is specified, use direct fetch (no discovery)
+    if (options.path) {
+      await addSingleAgent(source, options);
+      return;
+    }
 
-    log.info(`Found agent: ${name} — ${description}`);
+    // 2. Try to fetch a single agent at root
+    let rootResult: Awaited<ReturnType<typeof fetchAgent>> | undefined;
+    let rootError: Error | undefined;
 
-    // 2. Determine project root
+    try {
+      log.info(`Fetching agent from ${source}...`);
+      rootResult = await fetchAgent(source);
+    } catch (err) {
+      rootError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    // 3. If root fetch succeeded, install normally
+    if (rootResult) {
+      await addSingleAgent(source, options, rootResult);
+      return;
+    }
+
+    // 4. Root fetch failed — check if it's a "not found" error
+    if (!rootError || !/not found/i.test(rootError.message)) {
+      throw rootError!;
+    }
+
+    // 5. Attempt discovery
+    log.info("No root agent.md found. Searching for agents in subdirectories...");
+    const discovered = await discoverAgents(source);
+
+    if (discovered.length === 0) {
+      throw rootError;
+    }
+
+    // 6. Multiselect prompt
+    const selected = await multiselect({
+      message: `Found ${discovered.length} agents. Select which to install:`,
+      options: discovered.map((a) => ({
+        value: a.path,
+        label: a.name,
+        hint: a.description.length > 60
+          ? a.description.slice(0, 57) + "..."
+          : a.description,
+      })),
+      initialValues: [] as string[],
+      required: false,
+    });
+
+    if (isCancel(selected)) {
+      cancel("Installation cancelled.");
+      process.exit(0);
+    }
+
+    const selectedPaths = selected as string[];
+
+    if (selectedPaths.length === 0) {
+      log.info("No agents selected.");
+      return;
+    }
+
+    // 7. Scope and platform selection (once for all agents)
     const projectRoot = findProjectRoot();
-    const isGlobal = options.global ?? false;
+    const isGlobal = await promptScope(options, projectRoot);
+    const targets = await promptTargets(options, projectRoot);
 
-    // 3. Determine target adapters
-    let targets: Adapter[];
+    // 8. Fetch and install each selected agent
+    for (const agentPath of selectedPaths) {
+      log.info(`Fetching agent from ${source} (path: ${agentPath})...`);
+      const result = await fetchAgent(source, { path: agentPath });
 
-    if (options.tool) {
-      const adapter = getAdapter(options.tool as ToolTarget);
-      if (!adapter) {
-        log.error(`Unknown tool: ${options.tool}`);
-        process.exit(1);
-      }
-      targets = [adapter];
-    } else {
-      // Auto-detect which tools are present
-      const detected: Adapter[] = [];
-      for (const adapter of adapters) {
-        if (await adapter.detect(projectRoot)) {
-          detected.push(adapter);
-        }
-      }
-      // Default to opencode if nothing detected
-      targets = detected.length > 0 ? detected : [opencodeAdapter];
+      await installAgent(
+        result.agent,
+        targets,
+        projectRoot,
+        isGlobal,
+        result.resolvedSource,
+        result.sourceType,
+        agentPath,
+      );
     }
 
-    // 4. Install for each target
-    const targetNames: ToolTarget[] = [];
-
-    for (const adapter of targets) {
-      log.info(`Installing for ${adapter.name}...`);
-      await adapter.install({
-        agent,
-        projectDir: projectRoot,
-        global: isGlobal,
-      });
-      targetNames.push(adapter.name);
-      log.success(`Installed for ${adapter.name}`);
-    }
-
-    // 5. Register in lock file
-    await addAgent(
-      name,
-      {
-        source,
-        sourceUrl: `https://github.com/${source}`,
-        agentPath: options.path ?? "",
-        installedAt: new Date().toISOString(),
-        installedFor: targetNames,
-        hash: hashContent(agent.raw),
-      },
-      isGlobal,
-      projectRoot,
-    );
-
-    log.success(`Agent ${name} installed successfully`);
+    log.success(`Installed ${selectedPaths.length} agent(s) successfully`);
   } catch (err) {
     log.error(
       err instanceof Error ? err.message : `Failed to add agent: ${String(err)}`,
     );
     process.exit(1);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Single-agent install (original flow)
+// ---------------------------------------------------------------------------
+
+async function addSingleAgent(
+  source: string,
+  options: AddOptions,
+  prefetched?: Awaited<ReturnType<typeof fetchAgent>>,
+): Promise<void> {
+  const result = prefetched ?? await (async () => {
+    log.info(`Fetching agent from ${source}...`);
+    return fetchAgent(source, { path: options.path });
+  })();
+
+  const { agent, sourceType, resolvedSource } = result;
+  const { name, description } = agent.frontmatter;
+
+  log.info(`Found agent: ${name} — ${description}`);
+
+  const projectRoot = findProjectRoot();
+  const isGlobal = await promptScope(options, projectRoot);
+  const targets = await promptTargets(options, projectRoot);
+
+  const platformNames: Platform[] = [];
+
+  for (const adapter of targets) {
+    log.info(`Installing for ${adapter.name}...`);
+    await adapter.install({
+      agent,
+      projectDir: projectRoot,
+      global: isGlobal,
+    });
+    platformNames.push(adapter.name);
+    log.success(`Installed for ${adapter.name}`);
+  }
+
+  await addAgent(
+    name,
+    {
+      source: resolvedSource,
+      sourceType,
+      sourceUrl:
+        sourceType === "github"
+          ? `https://github.com/${resolvedSource}`
+          : resolvedSource,
+      agentPath: options.path ?? "",
+      installedAt: new Date().toISOString(),
+      platforms: platformNames,
+      hash: hashContent(agent.raw),
+      platformHashes: Object.fromEntries(
+        platformNames.map((platform) => [platform, hashContent(agent.raw)]),
+      ) as Partial<Record<Platform, string>>,
+    },
+    isGlobal,
+    projectRoot,
+  );
+
+  log.success(`Agent ${name} installed successfully`);
 }

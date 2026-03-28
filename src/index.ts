@@ -11,8 +11,8 @@ program
 program
   .command("add <source>")
   .description("Add an agent from a source")
-  .option("--tool <tool>", "target tool", undefined)
-  .option("--global", "install globally", false)
+  .option("--platform <platform>", "target platform", undefined)
+  .option("--global", "install globally")
   .option("--path <path>", "subfolder in repo")
   .action(async (source: string, options: Record<string, unknown>) => {
     const { addCommand } = await import("./commands/add.js");
@@ -30,9 +30,13 @@ program
 program
   .command("remove <name>")
   .description("Remove an installed agent")
-  .action(async (name: string) => {
+  .option("--platform <platform>", "remove only from one platform")
+  .option("--local", "remove the project-scoped install")
+  .option("--global", "remove the global-scoped install")
+  .option("--all", "remove both project and global installs")
+  .action(async (name: string, options: Record<string, unknown>) => {
     const { removeCommand } = await import("./commands/remove.js");
-    await removeCommand(name);
+    await removeCommand(name, options);
   });
 
 program
@@ -41,6 +45,16 @@ program
   .action(async (name?: string) => {
     const { initCommand } = await import("./commands/init.js");
     await initCommand(name);
+  });
+
+program
+  .command("update [name]")
+  .description("Update installed agents")
+  .option("--platform <platform>", "target platform")
+  .option("--global", "update global agents")
+  .action(async (name: string | undefined, options: Record<string, unknown>) => {
+    const { updateCommand } = await import("./commands/update.js");
+    await updateCommand(name, options);
   });
 
 program.parse(process.argv);

@@ -1,7 +1,18 @@
+export interface DiscoveredAgent {
+  /** Agent name from frontmatter */
+  name: string;
+  /** Agent description from frontmatter */
+  description: string;
+  /** Relative path from source root to the directory containing agent.md */
+  path: string;
+}
+
 export interface AgentFrontmatter {
   name: string;
   description: string;
   mode?: "primary" | "subagent";
+  color?: string;
+  model?: string;
   tools?: Record<string, boolean>;
   "claude-code"?: {
     permissions?: {
@@ -17,21 +28,33 @@ export interface AgentFrontmatter {
   };
 }
 
+export interface AgentSettings {
+  color?: string;
+  model?: string;
+  temperature?: number;
+  opencode?: Record<string, unknown>;
+  "claude-code"?: Record<string, unknown>;
+  kiro?: Record<string, unknown>;
+}
+
 export interface ParsedAgent {
   frontmatter: AgentFrontmatter;
+  settings: AgentSettings;
   body: string;
   raw: string;
 }
 
-export type ToolTarget = "opencode" | "claude-code" | "codex" | "kiro";
+export type Platform = "opencode" | "claude-code" | "codex" | "kiro";
 
 export interface InstalledAgent {
   source: string;
+  sourceType: "github" | "local";
   sourceUrl: string;
   agentPath: string;
   installedAt: string;
-  installedFor: ToolTarget[];
+  platforms: Platform[];
   hash: string;
+  platformHashes?: Partial<Record<Platform, string>>;
 }
 
 export interface LockFile {
@@ -46,7 +69,7 @@ export interface AdapterContext {
 }
 
 export interface Adapter {
-  name: ToolTarget;
+  name: Platform;
   detect(projectDir: string): Promise<boolean>;
   install(ctx: AdapterContext): Promise<void>;
   uninstall(name: string, projectDir: string, global: boolean): Promise<void>;
