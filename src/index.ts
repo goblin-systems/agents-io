@@ -4,7 +4,7 @@ import { Command } from "commander";
 const program = new Command();
 
 program
-  .name("agnts")
+  .name("agents-io")
   .version("0.1.0")
   .description("Install coding agents for OpenCode, Claude Code, Codex, and Kiro");
 

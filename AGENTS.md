@@ -1,8 +1,8 @@
-# AGENTS.md — agnts
+# AGENTS.md — agents-io
 
 ## Project overview
 
-`agnts` is a CLI tool that installs AI coding agents from GitHub repositories into local tool configurations. It fetches an `agent.md` file from a GitHub repo or local filesystem path, parses its YAML frontmatter + markdown body, and writes the appropriate files for each supported tool (OpenCode, Claude Code, Codex, Kiro).
+`agents-io` is a CLI tool that installs AI coding agents from GitHub repositories into local tool configurations. It fetches an `agent.md` file from a GitHub repo or local filesystem path, parses its YAML frontmatter + markdown body, and writes the appropriate files for each supported tool (OpenCode, Claude Code, Codex, Kiro).
 
 - **Runtime:** Bun + TypeScript (strict), ESM modules
 - **Build:** `bun build` produces a single-file Node-compatible bundle at `dist/index.js`
@@ -36,15 +36,15 @@ src/
   index.ts              CLI entry point — commander program with 5 commands (add, list, remove, init, update)
   types.ts              Shared TypeScript interfaces (Adapter, ParsedAgent, LockFile, etc.)
   commands/
-    add.ts              `agnts add <source>` — fetch + install + register in lock file
-    list.ts             `agnts list` — display installed agents (project + global)
-    remove.ts           `agnts remove <name>` — uninstall from adapters + deregister
-    init.ts             `agnts init [name]` — scaffold a new agent template directory
-    update.ts           `agnts update [name]` — re-fetch, compare hash, re-install if changed
+    add.ts              `agents-io add <source>` — fetch + install + register in lock file
+    list.ts             `agents-io list` — display installed agents (project + global)
+    remove.ts           `agents-io remove <name>` — uninstall from adapters + deregister
+    init.ts             `agents-io init [name]` — scaffold a new agent template directory
+    update.ts           `agents-io update [name]` — re-fetch, compare hash, re-install if changed
   core/
     parse.ts            gray-matter frontmatter parser with validation (name, description, mode, tools)
     fetch.ts            Fetches agent.md from GitHub or local paths (tries main then master for GitHub)
-    registry.ts         Reads/writes agnts-lock.json (SHA-256 hashing, CRUD operations)
+    registry.ts         Reads/writes agents-io-lock.json (SHA-256 hashing, CRUD operations)
   adapters/
     opencode.ts         Writes agents/{name}.md + updates opencode.json
     claude-code.ts      Writes .claude/agents/{name}.md + updates settings.json
@@ -122,7 +122,7 @@ Markdown body (the system prompt). Required — cannot be empty.
 
 ### Lock file
 
-`agnts-lock.json` tracks installed agents. Located at the project root (local) or `~/.config/agnts/` (global). Managed by `src/core/registry.ts`. Contains SHA-256 content hashes (first 12 hex chars) for change detection. Lock file entries use `platforms` (array of `Platform` values) and `platformHashes` (per-platform content hashes). Entries written with old keys (`installedFor`, `toolHashes`) are migrated transparently on read.
+`agents-io-lock.json` tracks installed agents. Located at the project root (local) or `~/.config/agents-io/` (global). Managed by `src/core/registry.ts`. Contains SHA-256 content hashes (first 12 hex chars) for change detection. Lock file entries use `platforms` (array of `Platform` values) and `platformHashes` (per-platform content hashes). Entries written with old keys (`installedFor`, `toolHashes`) are migrated transparently on read.
 
 ## Coding standards
 

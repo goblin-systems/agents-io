@@ -1,11 +1,11 @@
-// agnts-lock.json manager
+// agents-io-lock.json manager
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
 import type { LockFile, InstalledAgent } from "../types.js";
 
-const LOCK_FILENAME = "agnts-lock.json";
+const LOCK_FILENAME = "agents-io-lock.json";
 
 function emptyLockFile(): LockFile {
   return { version: 1, agents: {} };
@@ -22,7 +22,7 @@ export function getLockFilePath(
   projectRoot?: string,
 ): string {
   if (global) {
-    return join(homedir(), ".config", "agnts", LOCK_FILENAME);
+    return join(homedir(), ".config", "agents-io", LOCK_FILENAME);
   }
   return join(projectRoot ?? process.cwd(), LOCK_FILENAME);
 }

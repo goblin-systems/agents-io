@@ -92,7 +92,7 @@ describe("remove command", () => {
     await removeCommand("test-agent");
 
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(false);
-    const lockFile = JSON.parse(await readFile(join(projectDir, "agnts-lock.json"), "utf-8")) as {
+    const lockFile = JSON.parse(await readFile(join(projectDir, "agents-io-lock.json"), "utf-8")) as {
       agents: Record<string, unknown>;
     };
     expect(lockFile.agents["test-agent"]).toBeUndefined();
@@ -126,7 +126,7 @@ describe("remove command", () => {
 
     expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(false);
     const lockFile = JSON.parse(
-      await readFile(join(homeDir, ".config", "agnts", "agnts-lock.json"), "utf-8"),
+      await readFile(join(homeDir, ".config", "agents-io", "agents-io-lock.json"), "utf-8"),
     ) as { agents: Record<string, unknown> };
     expect(lockFile.agents["test-agent"]).toBeUndefined();
   });

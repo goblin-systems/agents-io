@@ -1,52 +1,52 @@
-# agnts
+# agents-io
 
 Install AI coding agents from GitHub — or your local filesystem — into your project. One command, any tool.
 
 ```bash
-npx agnts add owner/repo
+npx agents-io add owner/repo
 ```
 
-agnts fetches an agent definition from a GitHub repo and installs it in the correct format for whichever AI coding tools you use — OpenCode, Claude Code, Codex, or Kiro.
+agents-io fetches an agent definition from a GitHub repo and installs it in the correct format for whichever AI coding tools you use — OpenCode, Claude Code, Codex, or Kiro.
 
 ## Install
 
 ```bash
 # No install needed — run directly:
-npx agnts add owner/repo
+npx agents-io add owner/repo
 
 # Or install globally:
-npm i -g agnts
+npm i -g agents-io
 ```
 
 ## Quick start
 
 ```bash
 # Install an agent from GitHub
-npx agnts add acme/code-reviewer
+npx agents-io add acme/code-reviewer
 
 # Install for a specific platform only
-npx agnts add acme/code-reviewer --platform claude-code
+npx agents-io add acme/code-reviewer --platform claude-code
 
 # Install globally (user-level, not project-level)
-npx agnts add acme/code-reviewer --global
+npx agents-io add acme/code-reviewer --global
 
 # List installed agents
-npx agnts list
+npx agents-io list
 
 # Remove an agent
-npx agnts remove code-reviewer
+npx agents-io remove code-reviewer
 
 # Scaffold a new agent
-npx agnts init my-agent
+npx agents-io init my-agent
 
 # Install from a local path
-npx agnts add ./my-agents/code-reviewer
+npx agents-io add ./my-agents/code-reviewer
 
 # Update all installed agents
-npx agnts update
+npx agents-io update
 
 # Update a specific agent
-npx agnts update code-reviewer
+npx agents-io update code-reviewer
 ```
 
 ## Commands
@@ -55,17 +55,17 @@ npx agnts update code-reviewer
 
 Fetches `agent.md` from a GitHub repo or local directory and installs it for your detected tools.
 
-When run without `--platform` or `--global` flags, agnts prompts you to choose the install scope and target platforms interactively. Pass flags to skip prompts (useful for CI).
+When run without `--platform` or `--global` flags, agents-io prompts you to choose the install scope and target platforms interactively. Pass flags to skip prompts (useful for CI).
 
 ```bash
-npx agnts add owner/repo
-npx agnts add owner/repo --platform opencode
-npx agnts add owner/repo --platform claude-code
-npx agnts add owner/repo --global
-npx agnts add owner/repo --path agents/reviewer
-npx agnts add ./path/to/agent
-npx agnts add /absolute/path/to/agent
-npx agnts add C:\Users\you\agents\reviewer
+npx agents-io add owner/repo
+npx agents-io add owner/repo --platform opencode
+npx agents-io add owner/repo --platform claude-code
+npx agents-io add owner/repo --global
+npx agents-io add owner/repo --path agents/reviewer
+npx agents-io add ./path/to/agent
+npx agents-io add /absolute/path/to/agent
+npx agents-io add C:\Users\you\agents\reviewer
 ```
 
 | Flag | Description |
@@ -74,19 +74,19 @@ npx agnts add C:\Users\you\agents\reviewer
 | `--global` | Install to the tool's global config directory instead of the project |
 | `--path <path>` | Subfolder within the repo that contains `agent.md` |
 
-Flags skip the corresponding prompts. Without flags, agnts asks interactively:
+Flags skip the corresponding prompts. Without flags, agents-io asks interactively:
 
 1. **Scope** — Project (local) or Global (user-level). Default: local.
 2. **Platforms** — Which platforms to install for. Default: OpenCode only. Detected platforms are marked.
 
-When `--platform` is omitted, agnts auto-detects which tools you use by checking for their config files (`opencode.json`, `.claude/`, `.codex/`, `.kiro/`). If none are found, it defaults to OpenCode.
+When `--platform` is omitted, agents-io auto-detects which tools you use by checking for their config files (`opencode.json`, `.claude/`, `.codex/`, `.kiro/`). If none are found, it defaults to OpenCode.
 
 ### `list`
 
 Lists all installed agents, both project-level and global.
 
 ```bash
-npx agnts list
+npx agents-io list
 ```
 
 ### `remove <name>`
@@ -94,12 +94,12 @@ npx agnts list
 Removes an installed agent by name.
 
 ```bash
-npx agnts remove code-reviewer
-npx agnts remove code-reviewer --platform claude-code
-npx agnts remove code-reviewer --local
-npx agnts remove code-reviewer --global
-npx agnts remove code-reviewer --all
-npx agnts remove code-reviewer --all --platform opencode
+npx agents-io remove code-reviewer
+npx agents-io remove code-reviewer --platform claude-code
+npx agents-io remove code-reviewer --local
+npx agents-io remove code-reviewer --global
+npx agents-io remove code-reviewer --all
+npx agents-io remove code-reviewer --all --platform opencode
 ```
 
 | Flag | Description |
@@ -111,11 +111,11 @@ npx agnts remove code-reviewer --all --platform opencode
 
 Default behavior is scope-aware and safe:
 
-- If the agent exists only in the project lock file, agnts removes the project install.
-- If the agent exists only in the global lock file, agnts removes the global install.
-- If the agent exists in both scopes, agnts stops and tells you to choose `--local`, `--global`, or `--all`.
+- If the agent exists only in the project lock file, agents-io removes the project install.
+- If the agent exists only in the global lock file, agents-io removes the global install.
+- If the agent exists in both scopes, agents-io stops and tells you to choose `--local`, `--global`, or `--all`.
 
-When `--platform <platform>` is set, agnts removes only that adapter's files. If other platforms still reference the same agent in that scope, the lock entry stays and `installedFor` is updated. If that was the last installed platform in the scope, the lock entry is removed.
+When `--platform <platform>` is set, agents-io removes only that adapter's files. If other platforms still reference the same agent in that scope, the lock entry stays and `installedFor` is updated. If that was the last installed platform in the scope, the lock entry is removed.
 
 CLI output always states which scope is being removed.
 
@@ -124,13 +124,13 @@ CLI output always states which scope is being removed.
 Scaffolds a new agent template.
 
 ```bash
-npx agnts init my-agent
+npx agents-io init my-agent
 ```
 
 Creates `my-agent/agent.md` and `my-agent/README.md`. `agent.md` is the required contract. Add an optional `agent.json` only if you need extra settings like color, model, or tool-specific overrides. Edit the files, push to GitHub, and anyone can install it:
 
 ```bash
-npx agnts add yourname/my-agent
+npx agents-io add yourname/my-agent
 ```
 
 ### `update [name]`
@@ -138,10 +138,10 @@ npx agnts add yourname/my-agent
 Re-fetches installed agents from their original source and reinstalls if the content has changed. Without a name, updates all installed agents.
 
 ```bash
-npx agnts update
-npx agnts update code-reviewer
-npx agnts update --global
-npx agnts update code-reviewer --platform opencode
+npx agents-io update
+npx agents-io update code-reviewer
+npx agents-io update --global
+npx agents-io update code-reviewer --platform opencode
 ```
 
 | Flag | Description |
@@ -149,21 +149,21 @@ npx agnts update code-reviewer --platform opencode
 | `--platform <platform>` | Only update for a specific platform |
 | `--global` | Update global agents instead of project agents |
 
-agnts tracks content hashes in the lock file. If the hash matches, the agent is skipped. If it differs, the agent is re-installed.
+agents-io tracks content hashes in the lock file. If the hash matches, the agent is skipped. If it differs, the agent is re-installed.
 
-When you run `update --platform <platform>`, agnts updates only that adapter's files but keeps the full `installedFor` metadata intact.
+When you run `update --platform <platform>`, agents-io updates only that adapter's files but keeps the full `installedFor` metadata intact.
 
 ## How it works
 
-1. You run `npx agnts add owner/repo`
-2. agnts fetches `agent.md` from the repo (via `raw.githubusercontent.com`) or reads it from a local path
+1. You run `npx agents-io add owner/repo`
+2. agents-io fetches `agent.md` from the repo (via `raw.githubusercontent.com`) or reads it from a local path
 3. It detects which AI coding tools are present in your project
 4. It converts the agent definition into each tool's native format and writes the files
-5. It tracks the installation in `agnts-lock.json`
+5. It tracks the installation in `agents-io-lock.json`
 
 ### Local sources
 
-When the source starts with `.`, `/`, contains `\`, or matches a Windows drive letter (e.g. `C:`), agnts treats it as a local filesystem path instead of a GitHub repo. The local file is read directly — no network requests are made.
+When the source starts with `.`, `/`, contains `\`, or matches a Windows drive letter (e.g. `C:`), agents-io treats it as a local filesystem path instead of a GitHub repo. The local file is read directly — no network requests are made.
 
 ## Agent format
 
@@ -194,7 +194,7 @@ You are an expert code reviewer. Analyze the provided code for:
 
 ### Optional `agent.json`
 
-If you need install-time settings that do not belong in the shared prompt contract, add an `agent.json` file next to `agent.md`. agnts reads it when fetching from GitHub or a local path.
+If you need install-time settings that do not belong in the shared prompt contract, add an `agent.json` file next to `agent.md`. agents-io reads it when fetching from GitHub or a local path.
 
 ```json
 {
@@ -249,7 +249,7 @@ kiro:
 
 ## Where agents get installed
 
-Each tool has its own format and file structure. agnts handles the conversion automatically.
+Each tool has its own format and file structure. agents-io handles the conversion automatically.
 
 | Tool | Writes to | Registers in |
 |------|-----------|--------------|
@@ -274,21 +274,21 @@ With `--global`, agents install into each tool's global config directory:
 ## Creating your own agent
 
 ```bash
-npx agnts init my-agent
+npx agents-io init my-agent
 ```
 
 This gives you a ready-to-publish template. The workflow:
 
-1. `npx agnts init my-agent` — scaffold the files
+1. `npx agents-io init my-agent` — scaffold the files
 2. Edit `my-agent/agent.md` — write your agent's instructions and configure its frontmatter
 3. Push to GitHub
-4. Share: `npx agnts add yourname/my-agent`
+4. Share: `npx agents-io add yourname/my-agent`
 
 The only file that matters is `agent.md` at the repo root (or in a subfolder, installable via `--path`).
 
 ## Lock file
 
-agnts tracks installations in `agnts-lock.json` at the project root. This file records which agents are installed, their source repos, and which tools they were installed for. Commit it to version control so your team stays in sync.
+agents-io tracks installations in `agents-io-lock.json` at the project root. This file records which agents are installed, their source repos, and which tools they were installed for. Commit it to version control so your team stays in sync.
 
 ## License
 

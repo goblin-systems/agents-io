@@ -54,7 +54,7 @@ describe("hashContent", () => {
 describe("getLockFilePath", () => {
   test("returns project-level path when not global", () => {
     const path = getLockFilePath(false, "/my/project");
-    expect(path).toBe(join("/my/project", "agnts-lock.json"));
+    expect(path).toBe(join("/my/project", "agents-io-lock.json"));
   });
 });
 
@@ -73,7 +73,7 @@ describe("writeLockFile", () => {
 
     await writeLockFile(lockFile, false, tmpDir);
 
-    const filePath = join(tmpDir, "agnts-lock.json");
+    const filePath = join(tmpDir, "agents-io-lock.json");
     const content = await readFile(filePath, "utf-8");
 
     // Pretty-printed

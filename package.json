@@ -1,17 +1,19 @@
 {
-  "name": "agnts",
+  "name": "agents-io",
   "version": "0.1.0",
   "description": "Install coding agents for OpenCode, Claude Code, Codex, and Kiro",
   "type": "module",
   "bin": {
-    "agnts": "./dist/index.js"
+    "agents-io": "./dist/index.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node --format esm",
+    "build": "bun run build.ts",
     "dev": "bun run src/index.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "gray-matter": "^4.0.3"
@@ -32,8 +34,19 @@
   ],
   "license": "MIT",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
-  "author": "",
-  "repository": ""
+  "author": "Sergej Popov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goblin-systems/agents-io.git"
+  },
+  "homepage": "https://github.com/goblin-systems/agents-io#readme",
+  "bugs": {
+    "url": "https://github.com/goblin-systems/agents-io/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
