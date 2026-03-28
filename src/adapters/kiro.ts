@@ -1,0 +1,2 @@
+// Kiro adapter (optional)
+export {};

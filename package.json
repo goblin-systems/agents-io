@@ -1,0 +1,39 @@
+{
+  "name": "agnts",
+  "version": "0.1.0",
+  "description": "Install coding agents for OpenCode, Claude Code, Codex, and Kiro",
+  "type": "module",
+  "bin": {
+    "agnts": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --format esm",
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "bun-types": "^1.2.12",
+    "typescript": "^5.8.3"
+  },
+  "keywords": [
+    "agents",
+    "ai",
+    "cli",
+    "opencode",
+    "claude-code",
+    "codex",
+    "kiro"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "author": "",
+  "repository": ""
+}

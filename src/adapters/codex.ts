@@ -1,0 +1,2 @@
+// Codex adapter (optional)
+export {};
