@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile, unlink, access } from "fs/promises";
 import { join } from "path";
-import { homedir } from "os";
 import matter from "gray-matter";
 import type { Adapter, AdapterContext, ParsedAgent } from "../types.js";
+import { getGlobalDir } from "../utils/paths.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,7 +44,7 @@ function derivePermissions(
 
 /** Resolve the `.claude` directory for the given scope. */
 function resolveClaudeDir(projectDir: string, global: boolean): string {
-  return global ? join(homedir(), ".claude") : join(projectDir, ".claude");
+  return global ? getGlobalDir("claude-code") : join(projectDir, ".claude");
 }
 
 /** Safely read & parse a JSON file, returning a fallback on any error. */
@@ -123,7 +123,7 @@ function formatAgentMarkdown(
 
 async function detect(projectDir: string): Promise<boolean> {
   const projectClaudeDir = join(projectDir, ".claude");
-  const globalClaudeDir = join(homedir(), ".claude");
+  const globalClaudeDir = getGlobalDir("claude-code");
 
   const [projectExists, globalExists] = await Promise.all([
     exists(projectClaudeDir),

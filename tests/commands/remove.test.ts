@@ -5,6 +5,7 @@ import claudeCodeAdapter from "../../src/adapters/claude-code.js";
 import opencodeAdapter from "../../src/adapters/opencode.js";
 import { getAgent, writeLockFile } from "../../src/core/registry.js";
 import { parseAgentFile } from "../../src/core/parse.js";
+import { getGlobalDir } from "../../src/utils/paths.js";
 import { buildAgentContent, cleanTempDir, makeTempDir } from "../helpers.js";
 
 const CANCEL_SIGNAL = Symbol("cancel");
@@ -102,6 +103,18 @@ async function readIfExists(path: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function opencodeGlobalAgentPath(name: string): string {
+  return join(getGlobalDir("opencode"), "agents", `${name}.md`);
+}
+
+function claudeGlobalAgentPath(name: string): string {
+  return join(getGlobalDir("claude-code"), "agents", `${name}.md`);
+}
+
+function claudeGlobalDir(): string {
+  return getGlobalDir("claude-code");
 }
 
 async function setupProject(): Promise<{ projectDir: string; agent: ReturnType<typeof parseAgentFile> }> {
@@ -203,7 +216,7 @@ describe("remove command", () => {
 
     expect(selectCalls).toHaveLength(0);
     expect(multiselectCalls).toHaveLength(1);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(false);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(false);
     expect(await getAgent("test-agent", true, projectDir)).toBeUndefined();
   });
 
@@ -301,7 +314,7 @@ describe("remove command", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr.toString()).toContain("installed in both project and global scope");
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(true);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(true);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(true);
   });
 
   test("supports explicit --local removal when both scopes exist", async () => {
@@ -319,7 +332,7 @@ describe("remove command", () => {
     await removeCommand("test-agent", { local: true });
 
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(false);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(true);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(true);
   });
 
   test("supports explicit --global removal when both scopes exist", async () => {
@@ -337,7 +350,7 @@ describe("remove command", () => {
     await removeCommand("test-agent", { global: true });
 
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(true);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(false);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(false);
   });
 
   test("supports explicit --all removal when both scopes exist", async () => {
@@ -355,7 +368,7 @@ describe("remove command", () => {
     await removeCommand("test-agent", { all: true });
 
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(false);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(false);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(false);
   });
 
   test("previews a named removal without deleting files or updating the lock entry", async () => {
@@ -560,7 +573,7 @@ describe("remove command", () => {
 
     await mkdir(join(projectDir, ".claude"), { recursive: true });
     await writeFile(join(projectDir, ".claude", "settings.json"), "{}\n", "utf-8");
-    const globalClaudeDir = join(homeDir, ".claude");
+    const globalClaudeDir = claudeGlobalDir();
     await mkdir(globalClaudeDir, { recursive: true });
     await writeFile(join(globalClaudeDir, "settings.json"), "{}\n", "utf-8");
 
@@ -576,9 +589,9 @@ describe("remove command", () => {
     await removeCommand("test-agent", { all: true, platform: "opencode" });
 
     expect(await pathExists(join(projectDir, "agents", "test-agent.md"))).toBe(false);
-    expect(await pathExists(join(homeDir, ".config", "opencode", "agents", "test-agent.md"))).toBe(false);
+    expect(await pathExists(opencodeGlobalAgentPath("test-agent"))).toBe(false);
     expect(await pathExists(join(projectDir, ".claude", "agents", "test-agent.md"))).toBe(true);
-    expect(await pathExists(join(homeDir, ".claude", "agents", "test-agent.md"))).toBe(true);
+    expect(await pathExists(claudeGlobalAgentPath("test-agent"))).toBe(true);
 
     const remainingLocal = await getAgent("test-agent", false, projectDir);
     const remainingGlobal = await getAgent("test-agent", true, projectDir);
@@ -601,7 +614,7 @@ describe("remove command", () => {
     const localLockPath = join(projectDir, "agents-io-lock.json");
     const globalLockPath = join(configDir, "agents-io-lock.json");
     const localAgentPath = join(projectDir, "agents", "test-agent.md");
-    const globalAgentPath = join(homeDir, ".config", "opencode", "agents", "test-agent.md");
+    const globalAgentPath = opencodeGlobalAgentPath("test-agent");
     const localLockBefore = await readFile(localLockPath, "utf-8");
     const globalLockBefore = await readFile(globalLockPath, "utf-8");
     const localAgentBefore = await readFile(localAgentPath, "utf-8");
@@ -659,7 +672,7 @@ describe("remove command", () => {
     await writeLockFile({ version: 1, agents: { "test-agent": entry } }, true, projectDir);
 
     const localPath = join(projectDir, "agents", "test-agent.md");
-    const globalPath = join(homeDir, ".config", "opencode", "agents", "test-agent.md");
+    const globalPath = opencodeGlobalAgentPath("test-agent");
     const localBefore = await readIfExists(localPath);
     const globalBefore = await readIfExists(globalPath);
 

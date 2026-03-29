@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile, unlink, readdir, rmdir } from "fs/promises";
 import { join } from "path";
-import { homedir } from "os";
 import matter from "gray-matter";
 import type { Adapter, AdapterContext, AgentFrontmatter } from "../types.js";
+import { getGlobalDir } from "../utils/paths.js";
 
 const OPENCODE_CONFIG = "opencode.json";
 const AGENTS_DIR = "agents";
 
 function globalConfigDir(): string {
-  return join(homedir(), ".config", "opencode");
+  return getGlobalDir("opencode");
 }
 
 function configDir(projectDir: string, global: boolean): string {

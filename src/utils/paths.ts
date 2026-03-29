@@ -6,13 +6,25 @@ import type { Platform } from "../types.js";
 const PROJECT_MARKERS = [".git", "package.json", "opencode.json"];
 const CONFIG_DIR_ENV = "AGENTS_IO_CONFIG_DIR";
 
+function getHomeDir(): string {
+  const overriddenHome = process.platform === "win32"
+    ? process.env.USERPROFILE ?? process.env.HOME
+    : process.env.HOME;
+
+  if (overriddenHome) {
+    return resolve(overriddenHome);
+  }
+
+  return homedir();
+}
+
 export function getAgentsIoConfigDir(): string {
   const overriddenDir = process.env[CONFIG_DIR_ENV];
   if (overriddenDir) {
     return resolve(overriddenDir);
   }
 
-  return join(homedir(), ".config", "agents-io");
+  return join(getHomeDir(), ".config", "agents-io");
 }
 
 export function getRepositoryCacheDir(): string {
@@ -35,7 +47,7 @@ export function getProjectDir(platform: Platform, projectRoot: string): string {
 
 /** Resolve the global config directory for a platform. */
 export function getGlobalDir(platform: Platform): string {
-  const home = homedir();
+  const home = getHomeDir();
   switch (platform) {
     case "opencode":
       return join(home, ".config", "opencode");
