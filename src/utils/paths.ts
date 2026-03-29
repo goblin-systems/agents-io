@@ -4,6 +4,20 @@ import { existsSync } from "fs";
 import type { Platform } from "../types.js";
 
 const PROJECT_MARKERS = [".git", "package.json", "opencode.json"];
+const CONFIG_DIR_ENV = "AGENTS_IO_CONFIG_DIR";
+
+export function getAgentsIoConfigDir(): string {
+  const overriddenDir = process.env[CONFIG_DIR_ENV];
+  if (overriddenDir) {
+    return resolve(overriddenDir);
+  }
+
+  return join(homedir(), ".config", "agents-io");
+}
+
+export function getRepositoryCacheDir(): string {
+  return join(getAgentsIoConfigDir(), "repositories");
+}
 
 /** Resolve the project-level config directory for a platform. */
 export function getProjectDir(platform: Platform, projectRoot: string): string {

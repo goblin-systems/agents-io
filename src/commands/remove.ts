@@ -1,4 +1,5 @@
-import { addAgent, getAgent, removeAgent } from "../core/registry.js";
+import { cancel, isCancel, multiselect, select } from "@clack/prompts";
+import { addAgent, getAgent, listAgents, removeAgent } from "../core/registry.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
 import opencodeAdapter from "../adapters/opencode.js";
@@ -22,11 +23,71 @@ interface RemoveOptions {
   global?: boolean;
   all?: boolean;
   platform?: string;
+  dryRun?: boolean;
 }
 
 interface ScopeTarget {
   entry: InstalledAgent;
   global: boolean;
+}
+
+async function promptScope(options: RemoveOptions): Promise<boolean> {
+  if (options.global) {
+    return true;
+  }
+
+  if (options.local) {
+    return false;
+  }
+
+  const scope = await select({
+    message: "Where should agents be removed from?",
+    options: [
+      { value: "local" as const, label: "Project (local)", hint: "recommended" },
+      { value: "global" as const, label: "Global (user-level)" },
+    ],
+    initialValue: "local" as const,
+  });
+
+  if (isCancel(scope)) {
+    cancel("Removal cancelled.");
+    process.exit(0);
+  }
+
+  return scope === "global";
+}
+
+async function promptAgentsToRemove(
+  agents: Record<string, InstalledAgent>,
+  requestedPlatform?: Platform,
+): Promise<string[]> {
+  const selectableAgents = Object.entries(agents)
+    .filter(([, entry]) => !requestedPlatform || entry.platforms.includes(requestedPlatform))
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  if (selectableAgents.length === 0) {
+    return [];
+  }
+
+  const selected = await multiselect({
+    message: "Which agents should be removed?",
+    options: selectableAgents.map(([name, entry]) => ({
+      value: name,
+      label: name,
+      hint: requestedPlatform
+        ? `installed for ${requestedPlatform}`
+        : entry.platforms.join(", "),
+    })),
+    initialValues: [] as string[],
+    required: false,
+  });
+
+  if (isCancel(selected)) {
+    cancel("Removal cancelled.");
+    process.exit(0);
+  }
+
+  return selected as string[];
 }
 
 function getStoredPlatformHashes(
@@ -76,7 +137,21 @@ async function removeFromScope(
   isGlobal: boolean,
   entry: InstalledAgent,
   targetPlatforms: Platform[],
+  dryRun: boolean,
 ): Promise<void> {
+  const nextEntry = normalizeEntryAfterPlatformRemoval(entry, targetPlatforms);
+  const scopeLabel = isGlobal ? "global" : "project";
+
+  if (dryRun) {
+    log.installProgress(`Would remove '${name}' from ${scopeLabel} scope`);
+    log.dim(`  scope: ${scopeLabel}`);
+    log.dim(`  target platforms: ${targetPlatforms.join(", ")}`);
+    log.dim(
+      `  registry action: ${nextEntry ? `update entry (remaining platforms: ${nextEntry.platforms.join(", ")})` : "remove entry"}`,
+    );
+    return;
+  }
+
   log.info(`Removing '${name}' from ${isGlobal ? "global" : "project"} scope...`);
 
   for (const platform of targetPlatforms) {
@@ -96,8 +171,6 @@ async function removeFromScope(
     }
   }
 
-  const nextEntry = normalizeEntryAfterPlatformRemoval(entry, targetPlatforms);
-
   if (!nextEntry) {
     await removeAgent(name, isGlobal, projectRoot);
     log.success(`Agent '${name}' removed from ${isGlobal ? "global" : "project"} scope`);
@@ -115,12 +188,13 @@ async function removeFromScope(
 // ---------------------------------------------------------------------------
 
 export async function removeCommand(
-  name: string,
+  name: string | undefined,
   options: RemoveOptions = {},
 ): Promise<void> {
   try {
     const projectRoot = findProjectRoot();
     const requestedPlatform = options.platform as Platform | undefined;
+    const dryRun = options.dryRun ?? false;
 
     const selectedModes = [options.local, options.global, options.all].filter(Boolean).length;
     if (selectedModes > 1) {
@@ -132,6 +206,59 @@ export async function removeCommand(
       log.error(`Unknown platform: ${options.platform}`);
       process.exit(1);
     }
+
+    if (!name) {
+      if (options.all) {
+        log.error("--all requires an agent name");
+        process.exit(1);
+      }
+
+      const isGlobal = await promptScope(options);
+      const installedAgents = await listAgents(isGlobal, projectRoot);
+      const selectedNames = await promptAgentsToRemove(installedAgents, requestedPlatform);
+
+      if (selectedNames.length === 0) {
+        const scopeLabel = isGlobal ? "global" : "project";
+        if (Object.keys(installedAgents).length === 0) {
+          log.info(`No agents installed in ${scopeLabel} scope.`);
+          return;
+        }
+
+        if (requestedPlatform) {
+          log.info(`No agents installed for ${requestedPlatform} in ${scopeLabel} scope.`);
+          return;
+        }
+
+        log.info("No agents selected.");
+        return;
+      }
+
+      if (dryRun) {
+        log.info("Dry run preview - no changes were made.");
+      }
+
+      for (const selectedName of selectedNames) {
+        const entry = installedAgents[selectedName];
+        if (!entry) {
+          continue;
+        }
+
+        await removeFromScope(
+          selectedName,
+          projectRoot,
+          isGlobal,
+          entry,
+          requestedPlatform ? [requestedPlatform] : entry.platforms,
+          dryRun,
+        );
+      }
+
+      if (dryRun) {
+        log.success(`Dry run complete for ${selectedNames.length} agent(s)`);
+      }
+
+      return;
+     }
 
     // Look up agent in project scope first, then global
     const projectAgent = await getAgent(name, false, projectRoot);
@@ -202,6 +329,10 @@ export async function removeCommand(
       removeTargets.push(scopeTarget);
     }
 
+    if (dryRun) {
+      log.info("Dry run preview - no changes were made.");
+    }
+
     for (const target of removeTargets) {
       await removeFromScope(
         name,
@@ -209,7 +340,12 @@ export async function removeCommand(
         target.global,
         target.entry,
         requestedPlatform ? [requestedPlatform] : target.entry.platforms,
+        dryRun,
       );
+    }
+
+    if (dryRun) {
+      log.success(`Dry run complete for ${name}`);
     }
   } catch (err) {
     log.error(

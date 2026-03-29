@@ -1,12 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { fetchAgent, isLocalPath } from "../../src/core/fetch.js";
-import { buildAgentContent, cleanTempDir, makeTempDir } from "../helpers.js";
+import { normalizeGitHubSource } from "../../src/core/repositories.js";
+import {
+  buildAgentContent,
+  cleanTempDir,
+  createCachedGitHubRepository,
+  makeTempDir,
+} from "../helpers.js";
 
 let tempDir = "";
+const originalConfigDir = process.env.AGENTS_IO_CONFIG_DIR;
 
 afterEach(async () => {
+  process.env.AGENTS_IO_CONFIG_DIR = originalConfigDir;
+
   if (tempDir) {
     await cleanTempDir(tempDir);
     tempDir = "";
@@ -19,6 +28,33 @@ describe("fetchAgent (local)", () => {
     expect(isLocalPath("/agents/reviewer")).toBe(true);
     expect(isLocalPath("C:\\agents\\reviewer")).toBe(true);
     expect(isLocalPath("owner/repo")).toBe(false);
+  });
+
+  test("normalizes supported GitHub source formats", () => {
+    const expected = {
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      canonical: "goblin-systems/agents-io-team",
+      httpsUrl: "https://github.com/goblin-systems/agents-io-team.git",
+      cloneUrl: "https://github.com/goblin-systems/agents-io-team.git",
+    };
+
+    expect(normalizeGitHubSource("goblin-systems/agents-io-team")).toEqual(expected);
+    expect(
+      normalizeGitHubSource("https://github.com/goblin-systems/agents-io-team.git"),
+    ).toEqual(expected);
+    expect(
+      normalizeGitHubSource("git@github.com:goblin-systems/agents-io-team.git"),
+    ).toEqual({
+      ...expected,
+      cloneUrl: "git@github.com:goblin-systems/agents-io-team.git",
+    });
+    expect(
+      normalizeGitHubSource("ssh://git@github.com/goblin-systems/agents-io-team.git"),
+    ).toEqual({
+      ...expected,
+      cloneUrl: "ssh://git@github.com/goblin-systems/agents-io-team.git",
+    });
   });
 
   test("loads a local agent directory without network access", async () => {
@@ -90,7 +126,7 @@ describe("fetchAgent (local)", () => {
 
     try {
       await expect(fetchAgent("not-a-valid-source")).rejects.toThrow(
-        /invalid source format/i,
+        /invalid github source format/i,
       );
       expect(fetchCalled).toBe(false);
     } finally {
@@ -138,5 +174,61 @@ describe("fetchAgent (local)", () => {
 
     expect(result.agent.frontmatter.name).toBe("settings-agent");
     expect(result.agent.settings).toEqual({});
+  });
+
+  test("loads GitHub sources from the local clone cache", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: tempDir,
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "team-agent",
+          description: "Repository-backed agent",
+        }),
+        "agent.json": JSON.stringify({ model: "claude-sonnet-4" }, null, 2) + "\n",
+        "agents/reviewer/agent.md": buildAgentContent({
+          name: "reviewer-agent",
+          description: "Nested repository agent",
+        }),
+      },
+    });
+
+    expect(repository.cacheDir.endsWith(".git")).toBe(false);
+    expect((await stat(join(repository.cacheDir, ".git"))).isDirectory()).toBe(true);
+    expect(await readFile(join(repository.cacheDir, "agent.md"), "utf-8")).toContain(
+      "Repository-backed agent",
+    );
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error("network should not be used for cached GitHub fetches");
+    }) as typeof fetch;
+
+    try {
+      for (const source of [
+        "goblin-systems/agents-io-team",
+        "https://github.com/goblin-systems/agents-io-team.git",
+        "git@github.com:goblin-systems/agents-io-team.git",
+        "ssh://git@github.com/goblin-systems/agents-io-team.git",
+      ]) {
+        const result = await fetchAgent(source);
+        expect(result.sourceType).toBe("github");
+        expect(result.resolvedSource).toBe("goblin-systems/agents-io-team");
+        expect(result.agent.frontmatter.name).toBe("team-agent");
+        expect(result.agent.settings.model).toBe("claude-sonnet-4");
+      }
+
+      const nestedResult = await fetchAgent("goblin-systems/agents-io-team", {
+        path: "agents/reviewer",
+      });
+      expect(nestedResult.agent.frontmatter.name).toBe("reviewer-agent");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

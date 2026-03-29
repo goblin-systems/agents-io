@@ -1,6 +1,7 @@
 import { select, multiselect, isCancel, cancel } from "@clack/prompts";
-import { fetchAgent } from "../core/fetch.js";
+import { fetchAgent, LocalAgentNotFoundError } from "../core/fetch.js";
 import { discoverAgents } from "../core/discover.js";
+import { RepositoryAgentNotFoundError } from "../core/repositories.js";
 import { hashContent, addAgent } from "../core/registry.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
@@ -8,7 +9,7 @@ import opencodeAdapter from "../adapters/opencode.js";
 import claudeCodeAdapter from "../adapters/claude-code.js";
 import codexAdapter from "../adapters/codex.js";
 import kiroAdapter from "../adapters/kiro.js";
-import type { Adapter, Platform } from "../types.js";
+import type { Adapter, ParsedAgent, Platform } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Adapter registry
@@ -18,6 +19,13 @@ const adapters: Adapter[] = [opencodeAdapter, claudeCodeAdapter, codexAdapter, k
 
 function getAdapter(name: Platform): Adapter | undefined {
   return adapters.find((a) => a.name === name);
+}
+
+function isDiscoverableRootMiss(error: unknown): boolean {
+  return (
+    error instanceof LocalAgentNotFoundError ||
+    error instanceof RepositoryAgentNotFoundError
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -91,25 +99,26 @@ async function promptTargets(options: AddOptions, projectRoot: string): Promise<
 }
 
 async function installAgent(
-  agent: import("../types.js").ParsedAgent,
+  agent: ParsedAgent,
   targets: Adapter[],
   projectRoot: string,
   isGlobal: boolean,
   resolvedSource: string,
   sourceType: "github" | "local",
   agentPath: string,
+  repositoryUrl?: string,
 ): Promise<void> {
   const platformNames: Platform[] = [];
 
   for (const adapter of targets) {
-    log.info(`Installing ${agent.frontmatter.name} for ${adapter.name}...`);
+    log.installProgress(`Installing ${agent.frontmatter.name} for ${adapter.name}...`);
     await adapter.install({
       agent,
       projectDir: projectRoot,
       global: isGlobal,
     });
     platformNames.push(adapter.name);
-    log.success(`Installed ${agent.frontmatter.name} for ${adapter.name}`);
+    log.installSuccess(`Installed ${agent.frontmatter.name} for ${adapter.name}`);
   }
 
   await addAgent(
@@ -121,6 +130,7 @@ async function installAgent(
         sourceType === "github"
           ? `https://github.com/${resolvedSource}`
           : resolvedSource,
+      repositoryUrl,
       agentPath,
       installedAt: new Date().toISOString(),
       platforms: platformNames,
@@ -134,6 +144,23 @@ async function installAgent(
   );
 }
 
+function previewAgentInstall(
+  agent: ParsedAgent,
+  targets: Adapter[],
+  isGlobal: boolean,
+  resolvedSource: string,
+  agentPath: string,
+): void {
+  log.installProgress(`Would install ${agent.frontmatter.name}`);
+  log.dim(`  resolved source: ${resolvedSource}`);
+  log.dim(`  scope: ${isGlobal ? "global" : "project"}`);
+  log.dim(`  platforms: ${targets.map((target) => target.name).join(", ")}`);
+
+  if (agentPath) {
+    log.dim(`  agent path: ${agentPath}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
@@ -141,6 +168,7 @@ async function installAgent(
 export interface AddOptions {
   platform?: string;
   global?: boolean;
+  dryRun?: boolean;
   path?: string;
 }
 
@@ -173,7 +201,7 @@ export async function addCommand(
     }
 
     // 4. Root fetch failed — check if it's a "not found" error
-    if (!rootError || !/not found/i.test(rootError.message)) {
+    if (!rootError || !isDiscoverableRootMiss(rootError)) {
       throw rootError!;
     }
 
@@ -216,10 +244,25 @@ export async function addCommand(
     const isGlobal = await promptScope(options, projectRoot);
     const targets = await promptTargets(options, projectRoot);
 
+    if (options.dryRun) {
+      log.info("Dry run preview - no changes were made.");
+    }
+
     // 8. Fetch and install each selected agent
     for (const agentPath of selectedPaths) {
       log.info(`Fetching agent from ${source} (path: ${agentPath})...`);
       const result = await fetchAgent(source, { path: agentPath });
+
+      if (options.dryRun) {
+        previewAgentInstall(
+          result.agent,
+          targets,
+          isGlobal,
+          result.resolvedSource,
+          agentPath,
+        );
+        continue;
+      }
 
       await installAgent(
         result.agent,
@@ -229,7 +272,13 @@ export async function addCommand(
         result.resolvedSource,
         result.sourceType,
         agentPath,
+        result.repositoryUrl,
       );
+    }
+
+    if (options.dryRun) {
+      log.success(`Dry run complete for ${selectedPaths.length} agent(s)`);
+      return;
     }
 
     log.success(`Installed ${selectedPaths.length} agent(s) successfully`);
@@ -264,17 +313,24 @@ async function addSingleAgent(
   const isGlobal = await promptScope(options, projectRoot);
   const targets = await promptTargets(options, projectRoot);
 
+  if (options.dryRun) {
+    log.info("Dry run preview - no changes were made.");
+    previewAgentInstall(agent, targets, isGlobal, resolvedSource, options.path ?? "");
+    log.success(`Dry run complete for ${name}`);
+    return;
+  }
+
   const platformNames: Platform[] = [];
 
   for (const adapter of targets) {
-    log.info(`Installing for ${adapter.name}...`);
+    log.installProgress(`Installing for ${adapter.name}...`);
     await adapter.install({
       agent,
       projectDir: projectRoot,
       global: isGlobal,
     });
     platformNames.push(adapter.name);
-    log.success(`Installed for ${adapter.name}`);
+    log.installSuccess(`Installed for ${adapter.name}`);
   }
 
   await addAgent(
@@ -286,6 +342,7 @@ async function addSingleAgent(
         sourceType === "github"
           ? `https://github.com/${resolvedSource}`
           : resolvedSource,
+      repositoryUrl: result.repositoryUrl,
       agentPath: options.path ?? "",
       installedAt: new Date().toISOString(),
       platforms: platformNames,

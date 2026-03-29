@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: Version bump type
+        required: true
+        default: patch
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      new_tag: ${{ steps.version.outputs.new_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Determine next version
+        id: version
+        shell: pwsh
+        env:
+          BUMP_TYPE: ${{ github.event.inputs.bump_type }}
+        run: |
+          git fetch --tags --force
+
+          $latestTag = git tag --sort=-v:refname |
+            Where-Object { $_ -match '^v?\d+\.\d+\.\d+$' } |
+            Select-Object -First 1
+
+          if ([string]::IsNullOrWhiteSpace($latestTag)) {
+            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+            $baseVersion = $pkg.version
+          }
+          else {
+            $baseVersion = $latestTag.TrimStart('v')
+          }
+
+          if ($baseVersion -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
+            throw "Unable to parse semantic version from '$baseVersion'"
+          }
+
+          $major = [int]$Matches[1]
+          $minor = [int]$Matches[2]
+          $patch = [int]$Matches[3]
+
+          switch ($env:BUMP_TYPE) {
+            'major' { $major += 1; $minor = 0; $patch = 0 }
+            'minor' { $minor += 1; $patch = 0 }
+            'patch' { $patch += 1 }
+            default { throw "Unsupported bump type '$($env:BUMP_TYPE)'" }
+          }
+
+          $newVersion = "$major.$minor.$patch"
+          $newTag = "v$newVersion"
+
+          "new_version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "new_tag=$newTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          Write-Host "Latest tag: $latestTag"
+          Write-Host "Next version: $newVersion"
+
+      - name: Create and push tag
+        shell: pwsh
+        env:
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          $tag = $env:NEW_TAG.Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "NEW_TAG output is empty"
+          }
+
+          git show-ref --tags --verify --quiet "refs/tags/$tag"
+          if ($LASTEXITCODE -eq 0) {
+            throw "Tag $tag already exists"
+          }
+
+          git tag $tag
+          git push origin $tag
+
+  publish:
+    name: Build and publish package
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.new_tag }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node (npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Set package version
+        run: npm version ${{ needs.prepare.outputs.new_version }} --no-git-tag-version
+
+      - name: Build package
+        run: bun run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.new_tag }}
+          name: Release ${{ needs.prepare.outputs.new_tag }}
+          generate_release_notes: true

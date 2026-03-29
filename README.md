@@ -18,6 +18,12 @@ npx agents-io add owner/repo
 npm i -g agents-io
 ```
 
+## Automation
+
+- GitHub Actions CI runs on pushes to `master` and pull requests targeting `master`, and executes `bun run typecheck`, `bun test`, and `bun run build`.
+- GitHub Actions Release is a manual workflow with `major`, `minor`, or `patch` bump inputs. It creates the next tag, rebuilds from that tag, publishes `agents-io` to npm with provenance, and creates a GitHub release.
+- Before running the release workflow, configure npm publishing for this repository in npm. Provenance publishing is intended to work with GitHub Actions trusted publishing.
+
 ## Quick start
 
 ```bash
@@ -33,6 +39,16 @@ npx agents-io add acme/code-reviewer --global
 # List installed agents
 npx agents-io list
 
+# Inspect lock files and registry status
+npx agents-io list --verbose
+
+# Validate an agent without installing it
+npx agents-io validate owner/repo
+
+# Diagnose the current install state
+npx agents-io doctor
+npx agents-io doctor --global
+
 # Remove an agent
 npx agents-io remove code-reviewer
 
@@ -41,6 +57,9 @@ npx agents-io init my-agent
 
 # Install from a local path
 npx agents-io add ./my-agents/code-reviewer
+
+# Preview an install without writing files
+npx agents-io add acme/code-reviewer --dry-run
 
 # Update all installed agents
 npx agents-io update
@@ -62,6 +81,7 @@ npx agents-io add owner/repo
 npx agents-io add owner/repo --platform opencode
 npx agents-io add owner/repo --platform claude-code
 npx agents-io add owner/repo --global
+npx agents-io add owner/repo --dry-run
 npx agents-io add owner/repo --path agents/reviewer
 npx agents-io add ./path/to/agent
 npx agents-io add /absolute/path/to/agent
@@ -72,6 +92,7 @@ npx agents-io add C:\Users\you\agents\reviewer
 |------|-------------|
 | `--platform <platform>` | Target a specific platform: `opencode`, `claude-code`, `codex`, or `kiro` |
 | `--global` | Install to the tool's global config directory instead of the project |
+| `--dry-run` | Preview the add plan without writing adapter files, config files, or lock files |
 | `--path <path>` | Subfolder within the repo that contains `agent.md` |
 
 Flags skip the corresponding prompts. Without flags, agents-io asks interactively:
@@ -81,13 +102,73 @@ Flags skip the corresponding prompts. Without flags, agents-io asks interactivel
 
 When `--platform` is omitted, agents-io auto-detects which tools you use by checking for their config files (`opencode.json`, `.claude/`, `.codex/`, `.kiro/`). If none are found, it defaults to OpenCode.
 
+`add --dry-run` follows the same fetch, discovery, prompt, and validation flow as a real install, but it stops before any files are written. The preview reports the resolved source, chosen scope, and target platforms so you can verify the plan first.
+
 ### `list`
 
 Lists all installed agents, both project-level and global.
 
 ```bash
 npx agents-io list
+npx agents-io list --verbose
 ```
+
+Use `--verbose` when you want to inspect the lock file state without opening `agents-io-lock.json` manually. Verbose output keeps the default `list` behavior unchanged and adds:
+
+- the resolved lock file path for project and global scope
+- the scope state (`present` or `missing`)
+- one lock-file-only status per agent
+
+Current verbose status labels are:
+
+- `synced` - every installed platform points at the same stored hash and matches the entry hash
+- `mixed` - installed platform hashes do not fully agree with each other or with the entry hash
+
+Verbose mode still shows each scope and lock file path even when that scope has no agents.
+
+| Flag | Description |
+|------|-------------|
+| `--verbose` | Show lock file paths, scope state, and per-agent registry status |
+
+### `validate <source>`
+
+Validates an agent source using the same fetch and parse rules as `add`, but does not install anything or write a lock file.
+
+Use `validate` when you want to check that an agent can be consumed by `agents-io` before sharing or installing it. Use `add` when you want to install it.
+
+```bash
+npx agents-io validate owner/repo
+npx agents-io validate owner/repo --path agents/reviewer
+npx agents-io validate ./path/to/agent
+npx agents-io validate C:\Users\you\agents\reviewer
+```
+
+| Flag | Description |
+|------|-------------|
+| `--path <path>` | Subfolder within the repo or local source that contains `agent.md` |
+
+### `doctor`
+
+Checks recorded install health for one scope without writing any files or fetching anything from the network. By default it checks the project scope. Pass `--global` to inspect the global scope instead.
+
+```bash
+npx agents-io doctor
+npx agents-io doctor --global
+```
+
+`doctor` reads the selected scope's lock file and verifies that each recorded platform install still has the expected local artifacts and config entries.
+
+Current checks focus on install health only:
+
+- lock file present, readable, and parseable
+- per-agent registry hash status (`synced` vs `mixed`)
+- per-platform artifact/config presence for the recorded install
+
+When issues are found, `doctor` reports the affected agent, scope, and platform with a suggested next action such as reinstalling with `update` or removing a stale lock entry.
+
+| Flag | Description |
+|------|-------------|
+| `--global` | Check the global install scope instead of the project scope |
 
 ### `remove <name>`
 
@@ -100,6 +181,7 @@ npx agents-io remove code-reviewer --local
 npx agents-io remove code-reviewer --global
 npx agents-io remove code-reviewer --all
 npx agents-io remove code-reviewer --all --platform opencode
+npx agents-io remove code-reviewer --dry-run
 ```
 
 | Flag | Description |
@@ -108,6 +190,7 @@ npx agents-io remove code-reviewer --all --platform opencode
 | `--local` | Remove only the project-scoped install |
 | `--global` | Remove only the global-scoped install |
 | `--all` | Remove both project and global installs |
+| `--dry-run` | Preview the removal plan without deleting adapter files, config entries, or lock-file data |
 
 Default behavior is scope-aware and safe:
 
@@ -115,9 +198,11 @@ Default behavior is scope-aware and safe:
 - If the agent exists only in the global lock file, agents-io removes the global install.
 - If the agent exists in both scopes, agents-io stops and tells you to choose `--local`, `--global`, or `--all`.
 
-When `--platform <platform>` is set, agents-io removes only that adapter's files. If other platforms still reference the same agent in that scope, the lock entry stays and `installedFor` is updated. If that was the last installed platform in the scope, the lock entry is removed.
+When `--platform <platform>` is set, agents-io removes only that adapter's files. If other platforms still reference the same agent in that scope, the lock entry stays and `platforms` is updated. If that was the last installed platform in the scope, the lock entry is removed.
 
 CLI output always states which scope is being removed.
+
+`remove --dry-run` follows the same scope resolution, ambiguity checks, prompts, and platform filtering as a real removal, but it stops before any writes. The preview reports the affected scope, target platforms, and whether the lock entry would be updated or removed.
 
 ### `init [name]`
 
@@ -135,23 +220,37 @@ npx agents-io add yourname/my-agent
 
 ### `update [name]`
 
-Re-fetches installed agents from their original source and reinstalls if the content has changed. Without a name, updates all installed agents.
+Re-fetches installed agents from their original source and reinstalls if the content has changed. Without a name, updates all installed agents. Use `--check` to inspect update status without writing adapter files or lock files.
 
 ```bash
 npx agents-io update
+npx agents-io update --check
 npx agents-io update code-reviewer
+npx agents-io update code-reviewer --check
 npx agents-io update --global
 npx agents-io update code-reviewer --platform opencode
 ```
 
 | Flag | Description |
 |------|-------------|
+| `--check` | Report whether each checked agent is up to date, has an update available, or could not be checked |
 | `--platform <platform>` | Only update for a specific platform |
 | `--global` | Update global agents instead of project agents |
 
 agents-io tracks content hashes in the lock file. If the hash matches, the agent is skipped. If it differs, the agent is re-installed.
 
 When you run `update --platform <platform>`, agents-io updates only that adapter's files but keeps the full `installedFor` metadata intact.
+
+`update --check` uses the same comparison logic as a real update, but it stays inspection-only.
+
+## Which command to use
+
+- Use `validate` to check whether a source agent definition can be fetched and parsed before installation.
+- Use `doctor` to diagnose local install health for one scope after installation.
+- Use `list --verbose` to inspect lock file paths and stored registry hash state for both scopes.
+- Use `update --check` to compare installed agents with their original source and see whether newer content is available.
+
+In short: `validate` checks source inputs, `doctor` checks local install state, `list --verbose` shows recorded metadata, and `update --check` checks source freshness.
 
 ## How it works
 

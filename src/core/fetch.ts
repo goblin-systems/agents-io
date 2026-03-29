@@ -2,6 +2,11 @@ import { resolve, join, dirname } from "path";
 import { readFile, stat } from "fs/promises";
 import { parseAgentFile, parseAgentFromPath } from "./parse.js";
 import type { ParsedAgent, AgentSettings } from "../types.js";
+import {
+  fetchRepositoryAgent,
+  InvalidRepositorySourceError,
+  normalizeGitHubSource,
+} from "./repositories.js";
 
 export interface FetchOptions {
   /** Subfolder within the repo (or local path) that contains agent.md. */
@@ -13,13 +18,17 @@ export interface FetchResult {
   sourceType: "github" | "local";
   /** "owner/repo" for github, absolute path for local. */
   resolvedSource: string;
+  repositoryUrl?: string;
 }
 
-const SOURCE_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
-const BRANCHES = ["main", "master"] as const;
+export class LocalAgentNotFoundError extends Error {
+  constructor(agentFilePath: string) {
+    super(`Agent file not found at ${agentFilePath}`);
+    this.name = "LocalAgentNotFoundError";
+    this.agentFilePath = agentFilePath;
+  }
 
-function buildRawUrl(owner: string, repo: string, branch: string, filePath: string): string {
-  return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+  agentFilePath: string;
 }
 
 /**
@@ -73,7 +82,7 @@ async function fetchLocalAgent(
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`Agent file not found at ${agentFilePath}`);
+      throw new LocalAgentNotFoundError(agentFilePath);
     }
     throw err;
   }
@@ -96,69 +105,20 @@ async function fetchGitHubAgent(
   source: string,
   options?: FetchOptions,
 ): Promise<FetchResult> {
-  if (!SOURCE_RE.test(source)) {
-    throw new Error("Invalid source format. Expected: owner/repo");
+  const normalizedSource = normalizeGitHubSource(source);
+
+  if (!normalizedSource) {
+    throw new InvalidRepositorySourceError(source);
   }
 
-  const [owner, repo] = source.split("/");
-  const filePath = options?.path
-    ? `${options.path.replace(/\/+$/, "")}/agent.md`
-    : "agent.md";
+  const { content, settings } = await fetchRepositoryAgent(normalizedSource, options?.path);
 
-  // Derive the agent.json path from the agent.md path
-  const jsonPath = filePath.replace(/agent\.md$/, "agent.json");
-
-  let lastError: Error | undefined;
-
-  for (const branch of BRANCHES) {
-    const url = buildRawUrl(owner, repo, branch, filePath);
-
-    let response: Response;
-    try {
-      response = await fetch(url);
-    } catch (err) {
-      lastError = new Error(
-        `Failed to fetch agent: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      continue;
-    }
-
-    if (response.ok) {
-      const content = await response.text();
-
-      // Try to fetch agent.json from the same path
-      let settings: AgentSettings = {};
-      try {
-        const jsonUrl = buildRawUrl(owner, repo, branch, jsonPath);
-        const jsonResponse = await fetch(jsonUrl);
-        if (jsonResponse.ok) {
-          settings = (await jsonResponse.json()) as AgentSettings;
-        }
-      } catch {
-        // agent.json not found or invalid — use empty settings
-      }
-
-      return {
-        agent: parseAgentFile(content, settings),
-        sourceType: "github",
-        resolvedSource: source,
-      };
-    }
-
-    if (response.status === 404) {
-      lastError = new Error(
-        `Agent not found at ${url}. Check the repository and path.`,
-      );
-      continue;
-    }
-
-    // Other HTTP errors
-    lastError = new Error(
-      `Failed to fetch agent: HTTP ${response.status} ${response.statusText}`,
-    );
-  }
-
-  throw lastError!;
+  return {
+    agent: parseAgentFile(content, settings as AgentSettings),
+    sourceType: "github",
+    resolvedSource: normalizedSource.canonical,
+    repositoryUrl: normalizedSource.cloneUrl,
+  };
 }
 
 /**

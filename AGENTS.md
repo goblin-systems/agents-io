@@ -32,6 +32,9 @@ Always run `bun run typecheck` and `bun test` after making changes.
 ## Directory structure
 
 ```
+backlog/
+  epic-*.md            Active backlog items
+  done/                Completed epics moved here
 src/
   index.ts              CLI entry point — commander program with 5 commands (add, list, remove, init, update)
   types.ts              Shared TypeScript interfaces (Adapter, ParsedAgent, LockFile, etc.)
@@ -54,6 +57,13 @@ src/
     logger.ts           chalk-based structured logger with info, success, warn, error, dim methods
     paths.ts            Platform config path resolution + findProjectRoot (walks up looking for markers)
 ```
+
+## Backlog process
+
+- The backlog lives in `backlog/`.
+- Track active work as `epic-*.md` files only; do not use `issue-*.md` files.
+- Move completed epics to `backlog/done/` instead of deleting them.
+- When backlog work is completed, update the backlog in the same work session: move finished epics to `backlog/done/` and keep active backlog items current.
 
 ## Architecture
 

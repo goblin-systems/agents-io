@@ -1,12 +1,20 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, stat } from "fs/promises";
 import { join } from "path";
 import { discoverAgents } from "../../src/core/discover.js";
-import { buildAgentContent, makeTempDir, cleanTempDir } from "../helpers.js";
+import {
+  buildAgentContent,
+  makeTempDir,
+  cleanTempDir,
+  createCachedGitHubRepository,
+} from "../helpers.js";
 
 let tempDir: string;
+const originalConfigDir = process.env.AGENTS_IO_CONFIG_DIR;
 
 afterEach(async () => {
+  process.env.AGENTS_IO_CONFIG_DIR = originalConfigDir;
+
   if (tempDir) {
     await cleanTempDir(tempDir);
   }
@@ -225,6 +233,50 @@ describe("discoverAgents (edge cases)", () => {
       const agents = await discoverAgents("nodash");
       expect(agents).toEqual([]);
       expect(fetchCalled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("discovers agents from a cached GitHub repository", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: tempDir,
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agents/reviewer/agent.md": buildAgentContent({
+          name: "reviewer-agent",
+          description: "Code review helper",
+        }),
+        "agents/releaser/agent.md": buildAgentContent({
+          name: "releaser-agent",
+          description: "Release helper",
+        }),
+      },
+    });
+
+    expect(repository.cacheDir.endsWith(".git")).toBe(false);
+    expect((await stat(join(repository.cacheDir, ".git"))).isDirectory()).toBe(true);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error("network should not be used for cached GitHub discovery");
+    }) as typeof fetch;
+
+    try {
+      const agents = await discoverAgents("git@github.com:goblin-systems/agents-io-team.git");
+
+      expect(agents.map((agent) => agent.name).sort()).toEqual([
+        "releaser-agent",
+        "reviewer-agent",
+      ]);
+      expect(agents.find((agent) => agent.name === "reviewer-agent")?.path).toBe(
+        "agents/reviewer",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }

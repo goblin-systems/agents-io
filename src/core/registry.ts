@@ -1,9 +1,9 @@
 // agents-io-lock.json manager
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { access, readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
-import { homedir } from "os";
 import { createHash } from "crypto";
 import type { LockFile, InstalledAgent } from "../types.js";
+import { getAgentsIoConfigDir } from "../utils/paths.js";
 
 const LOCK_FILENAME = "agents-io-lock.json";
 
@@ -22,9 +22,23 @@ export function getLockFilePath(
   projectRoot?: string,
 ): string {
   if (global) {
-    return join(homedir(), ".config", "agents-io", LOCK_FILENAME);
+    return join(getAgentsIoConfigDir(), LOCK_FILENAME);
   }
   return join(projectRoot ?? process.cwd(), LOCK_FILENAME);
+}
+
+export interface LockFileDetails {
+  path: string;
+  exists: boolean;
+  lockFile: LockFile;
+}
+
+export interface LockFileInspection {
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  lockFile: LockFile;
+  error?: string;
 }
 
 /**
@@ -42,6 +56,17 @@ function migrateEntry(entry: InstalledAgent & Record<string, unknown>): Installe
   return entry;
 }
 
+function parseLockFile(raw: string): LockFile {
+  const parsed = JSON.parse(raw) as LockFile;
+  for (const name of Object.keys(parsed.agents)) {
+    parsed.agents[name] = migrateEntry(
+      parsed.agents[name] as InstalledAgent & Record<string, unknown>,
+    );
+  }
+
+  return parsed;
+}
+
 /** Read the lock file. Return empty lock file if it doesn't exist. */
 export async function readLockFile(
   global: boolean,
@@ -50,17 +75,83 @@ export async function readLockFile(
   const filePath = getLockFilePath(global, projectRoot);
   try {
     const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as LockFile;
-    // Migrate any entries that still use the old field names
-    for (const name of Object.keys(parsed.agents)) {
-      parsed.agents[name] = migrateEntry(
-        parsed.agents[name] as InstalledAgent & Record<string, unknown>,
-      );
-    }
-    return parsed;
+    return parseLockFile(raw);
   } catch {
     return emptyLockFile();
   }
+}
+
+export async function inspectLockFile(
+  global: boolean,
+  projectRoot?: string,
+): Promise<LockFileInspection> {
+  const path = getLockFilePath(global, projectRoot);
+
+  try {
+    await access(path);
+  } catch {
+    return {
+      path,
+      exists: false,
+      readable: true,
+      lockFile: emptyLockFile(),
+    };
+  }
+
+  try {
+    const raw = await readFile(path, "utf-8");
+    return {
+      path,
+      exists: true,
+      readable: true,
+      lockFile: parseLockFile(raw),
+    };
+  } catch (error) {
+    return {
+      path,
+      exists: true,
+      readable: false,
+      lockFile: emptyLockFile(),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function readLockFileDetails(
+  global: boolean,
+  projectRoot?: string,
+): Promise<LockFileDetails> {
+  const path = getLockFilePath(global, projectRoot);
+
+  try {
+    await access(path);
+    return {
+      path,
+      exists: true,
+      lockFile: await readLockFile(global, projectRoot),
+    };
+  } catch {
+    return {
+      path,
+      exists: false,
+      lockFile: emptyLockFile(),
+    };
+  }
+}
+
+export type AgentRegistryStatus = "synced" | "mixed";
+
+export function getAgentRegistryStatus(entry: InstalledAgent): AgentRegistryStatus {
+  const resolvedHashes = entry.platforms.map(
+    (platform) => entry.platformHashes?.[platform] ?? entry.hash,
+  );
+
+  if (resolvedHashes.length === 0) {
+    return "mixed";
+  }
+
+  const uniqueHashes = new Set(resolvedHashes);
+  return uniqueHashes.size === 1 && resolvedHashes[0] === entry.hash ? "synced" : "mixed";
 }
 
 /** Write the lock file (pretty-printed JSON). */

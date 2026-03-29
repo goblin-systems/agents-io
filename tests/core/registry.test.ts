@@ -3,8 +3,10 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import {
   hashContent,
+  getAgentRegistryStatus,
   getLockFilePath,
   readLockFile,
+  readLockFileDetails,
   writeLockFile,
   addAgent,
   removeAgent,
@@ -31,6 +33,8 @@ function makeEntry(overrides?: Partial<InstalledAgent>): InstalledAgent {
     installedAt: overrides?.installedAt ?? new Date().toISOString(),
     platforms: overrides?.platforms ?? ["opencode"],
     hash: overrides?.hash ?? "abc123def456",
+    platformHashes: overrides?.platformHashes,
+    repositoryUrl: overrides?.repositoryUrl,
   };
 }
 
@@ -63,6 +67,18 @@ describe("readLockFile", () => {
     tmpDir = await makeTempDir();
     const lockFile = await readLockFile(false, tmpDir);
     expect(lockFile).toEqual({ version: 1, agents: {} });
+  });
+});
+
+describe("readLockFileDetails", () => {
+  test("reports missing files without throwing", async () => {
+    tmpDir = await makeTempDir();
+
+    const details = await readLockFileDetails(false, tmpDir);
+
+    expect(details.exists).toBe(false);
+    expect(details.path).toBe(join(tmpDir, "agents-io-lock.json"));
+    expect(details.lockFile).toEqual({ version: 1, agents: {} });
   });
 });
 
@@ -168,5 +184,37 @@ describe("listAgents", () => {
     tmpDir = await makeTempDir();
     const agents = await listAgents(false, tmpDir);
     expect(agents).toEqual({});
+  });
+});
+
+describe("getAgentRegistryStatus", () => {
+  test("returns synced when entry hashes align", () => {
+    expect(
+      getAgentRegistryStatus(
+        makeEntry({
+          hash: "abc123def456",
+          platforms: ["opencode", "claude-code"],
+          platformHashes: {
+            opencode: "abc123def456",
+            "claude-code": "abc123def456",
+          },
+        }),
+      ),
+    ).toBe("synced");
+  });
+
+  test("returns mixed when platform hashes disagree with the stored hash", () => {
+    expect(
+      getAgentRegistryStatus(
+        makeEntry({
+          hash: "abc123def456",
+          platforms: ["opencode", "claude-code"],
+          platformHashes: {
+            opencode: "abc123def456",
+            "claude-code": "zzz999yyy888",
+          },
+        }),
+      ),
+    ).toBe("mixed");
   });
 });

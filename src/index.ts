@@ -13,6 +13,7 @@ program
   .description("Add an agent from a source")
   .option("--platform <platform>", "target platform", undefined)
   .option("--global", "install globally")
+  .option("--dry-run", "preview add without writing changes")
   .option("--path <path>", "subfolder in repo")
   .action(async (source: string, options: Record<string, unknown>) => {
     const { addCommand } = await import("./commands/add.js");
@@ -22,19 +23,39 @@ program
 program
   .command("list")
   .description("List installed agents")
-  .action(async () => {
+  .option("--verbose", "show lock file paths and registry status")
+  .action(async (options: Record<string, unknown>) => {
     const { listCommand } = await import("./commands/list.js");
-    await listCommand();
+    await listCommand(options);
   });
 
 program
-  .command("remove <name>")
+  .command("validate <source>")
+  .description("Validate an agent source without installing it")
+  .option("--path <path>", "subfolder in repo")
+  .action(async (source: string, options: Record<string, unknown>) => {
+    const { validateCommand } = await import("./commands/validate.js");
+    await validateCommand(source, options);
+  });
+
+program
+  .command("doctor")
+  .description("Check install health for one scope")
+  .option("--global", "check the global install scope")
+  .action(async (options: Record<string, unknown>) => {
+    const { doctorCommand } = await import("./commands/doctor.js");
+    await doctorCommand(options);
+  });
+
+program
+  .command("remove [name]")
   .description("Remove an installed agent")
   .option("--platform <platform>", "remove only from one platform")
   .option("--local", "remove the project-scoped install")
   .option("--global", "remove the global-scoped install")
   .option("--all", "remove both project and global installs")
-  .action(async (name: string, options: Record<string, unknown>) => {
+  .option("--dry-run", "preview removal without writing changes")
+  .action(async (name: string | undefined, options: Record<string, unknown>) => {
     const { removeCommand } = await import("./commands/remove.js");
     await removeCommand(name, options);
   });
@@ -50,7 +71,9 @@ program
 program
   .command("update [name]")
   .description("Update installed agents")
+  .option("--check", "report update status without writing changes")
   .option("--platform <platform>", "target platform")
+  .option("--local", "update project-scoped agents")
   .option("--global", "update global agents")
   .action(async (name: string | undefined, options: Record<string, unknown>) => {
     const { updateCommand } = await import("./commands/update.js");
