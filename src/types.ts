@@ -46,11 +46,18 @@ export interface ParsedAgent {
 
 export type Platform = "opencode" | "claude-code" | "codex" | "kiro";
 
+export interface GitHubRef {
+  type: "branch" | "tag" | "commit";
+  value: string;
+  resolvedCommit: string;
+}
+
 export interface InstalledAgent {
   source: string;
   sourceType: "github" | "local";
   sourceUrl: string;
   repositoryUrl?: string;
+  githubRef?: GitHubRef;
   agentPath: string;
   installedAt: string;
   platforms: Platform[];

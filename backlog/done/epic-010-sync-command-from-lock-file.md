@@ -1,6 +1,6 @@
 # Epic 010: `sync` command from committed lock file
 
-Status: Active. Active epics live in `backlog/`. Move completed epics to `backlog/done/`.
+Status: Done. Completed epics live in `backlog/done/`.
 
 ## Problem and outcome
 

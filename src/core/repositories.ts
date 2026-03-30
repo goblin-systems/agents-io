@@ -4,12 +4,15 @@ import { promisify } from "util";
 import { dirname, join, posix } from "path";
 import matter from "gray-matter";
 import { getRepositoryCacheDir } from "../utils/paths.js";
-import type { AgentSettings, DiscoveredAgent } from "../types.js";
+import type { AgentSettings, DiscoveredAgent, GitHubRef } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 const SHORTHAND_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const SSH_RE = /^git@github\.com:([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
 const SSH_URL_RE = /^ssh:\/\/git@github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/;
+const CONVERTIBLE_AGENT_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
+
+type ConvertibleRepositoryAgentFile = (typeof CONVERTIBLE_AGENT_FILES)[number];
 
 export interface NormalizedGitHubRepositorySource {
   owner: string;
@@ -17,6 +20,13 @@ export interface NormalizedGitHubRepositorySource {
   canonical: string;
   httpsUrl: string;
   cloneUrl: string;
+}
+
+export interface ConvertibleRepositoryAgent {
+  sourceFile: ConvertibleRepositoryAgentFile;
+  sourcePath: string;
+  content: string;
+  resolvedCommit: string;
 }
 
 export class InvalidRepositorySourceError extends Error {
@@ -119,10 +129,7 @@ async function cloneRepository(
 
 async function refreshRepository(cachePath: string): Promise<void> {
   await runGit(["rev-parse", "--is-inside-work-tree"], cachePath);
-  await runGit(["fetch", "--prune", "origin"], cachePath);
-
-  const defaultBranch = await resolveRepositoryRef(cachePath);
-  await runGit(["checkout", "--detach", `origin/${defaultBranch}`], cachePath);
+  await runGit(["fetch", "--prune", "--tags", "origin"], cachePath);
 }
 
 async function resolveRepositoryRef(cachePath: string): Promise<string> {
@@ -149,6 +156,36 @@ async function resolveRepositoryRef(cachePath: string): Promise<string> {
   }
 
   throw new Error(`Repository cache at ${cachePath} has no readable default branch`);
+}
+
+async function checkoutRepositoryRef(
+  cachePath: string,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
+): Promise<string> {
+  if (!githubRef) {
+    const defaultBranch = await resolveRepositoryRef(cachePath);
+    await runGit(["checkout", "--detach", `origin/${defaultBranch}`], cachePath);
+    return runGit(["rev-parse", "HEAD"], cachePath);
+  }
+
+  if (githubRef.type === "branch") {
+    await runGit(["rev-parse", "--verify", `refs/remotes/origin/${githubRef.value}`], cachePath);
+    await runGit(["checkout", "--detach", `origin/${githubRef.value}`], cachePath);
+    return runGit(["rev-parse", "HEAD"], cachePath);
+  }
+
+  if (githubRef.type === "tag") {
+    await runGit(["rev-parse", "--verify", `refs/tags/${githubRef.value}`], cachePath);
+    await runGit(["checkout", "--detach", `refs/tags/${githubRef.value}`], cachePath);
+    return runGit(["rev-parse", "HEAD"], cachePath);
+  }
+
+  const resolvedCommit = await runGit(
+    ["rev-parse", "--verify", `${githubRef.value}^{commit}`],
+    cachePath,
+  );
+  await runGit(["checkout", "--detach", resolvedCommit], cachePath);
+  return resolvedCommit;
 }
 
 async function readCachedFile(cachePath: string, filePath: string): Promise<string | null> {
@@ -246,6 +283,7 @@ export function normalizeGitHubSource(
 
 export async function ensureRepositoryCache(
   source: NormalizedGitHubRepositorySource,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
 ): Promise<string> {
   const cachePath = buildCachePath(source);
 
@@ -254,7 +292,10 @@ export async function ensureRepositoryCache(
   } catch {
     await rm(cachePath, { recursive: true, force: true });
     await cloneRepository(source, cachePath);
+    await refreshRepository(cachePath);
   }
+
+  await checkoutRepositoryRef(cachePath, githubRef);
 
   return cachePath;
 }
@@ -262,8 +303,9 @@ export async function ensureRepositoryCache(
 export async function fetchRepositoryAgent(
   source: NormalizedGitHubRepositorySource,
   agentPath?: string,
-): Promise<{ content: string; settings: AgentSettings }> {
-  const cachePath = await ensureRepositoryCache(source);
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
+): Promise<{ content: string; settings: AgentSettings; resolvedCommit: string }> {
+  const cachePath = await ensureRepositoryCache(source, githubRef);
   const markdownPath = sanitizeRepositoryPath(agentPath);
   const content = await readCachedFile(cachePath, markdownPath);
 
@@ -272,17 +314,20 @@ export async function fetchRepositoryAgent(
   }
 
   const jsonContent = await readCachedFile(cachePath, agentJsonPath(markdownPath));
+  const resolvedCommit = await runGit(["rev-parse", "HEAD"], cachePath);
 
   return {
     content,
     settings: jsonContent ? tryParseSettings(jsonContent) : {},
+    resolvedCommit,
   };
 }
 
 export async function discoverRepositoryAgents(
   source: NormalizedGitHubRepositorySource,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
 ): Promise<DiscoveredAgent[]> {
-  const cachePath = await ensureRepositoryCache(source);
+  const cachePath = await ensureRepositoryCache(source, githubRef);
   const discovered: DiscoveredAgent[] = [];
 
   for (const entry of await listDirectory(cachePath)) {
@@ -318,4 +363,38 @@ export async function discoverRepositoryAgents(
   }
 
   return discovered;
+}
+
+export async function findConvertibleRepositoryAgent(
+  source: NormalizedGitHubRepositorySource,
+  agentPath?: string,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
+): Promise<ConvertibleRepositoryAgent | null> {
+  const cachePath = await ensureRepositoryCache(source, githubRef);
+  const basePath = agentPath?.replace(/^\/+|\/+$/g, "");
+  const matches: Array<{
+    sourceFile: ConvertibleRepositoryAgentFile;
+    sourcePath: string;
+    content: string;
+  }> = [];
+
+  for (const sourceFile of CONVERTIBLE_AGENT_FILES) {
+    const sourcePath = basePath ? posix.join(basePath, sourceFile) : sourceFile;
+    const content = await readCachedFile(cachePath, sourcePath);
+
+    if (!content || !content.trim()) {
+      continue;
+    }
+
+    matches.push({ sourceFile, sourcePath, content });
+  }
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return {
+    ...matches[0],
+    resolvedCommit: await runGit(["rev-parse", "HEAD"], cachePath),
+  };
 }

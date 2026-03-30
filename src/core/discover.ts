@@ -2,7 +2,7 @@ import { resolve, join } from "path";
 import { readdir, readFile, stat } from "fs/promises";
 import matter from "gray-matter";
 import { isLocalPath } from "./fetch.js";
-import type { DiscoveredAgent } from "../types.js";
+import type { DiscoveredAgent, GitHubRef } from "../types.js";
 import { discoverRepositoryAgents, normalizeGitHubSource } from "./repositories.js";
 
 // ---------------------------------------------------------------------------
@@ -103,23 +103,29 @@ async function discoverLocal(source: string): Promise<DiscoveredAgent[]> {
   return agents;
 }
 
-async function discoverGitHub(source: string): Promise<DiscoveredAgent[]> {
+async function discoverGitHub(
+  source: string,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
+): Promise<DiscoveredAgent[]> {
   const normalizedSource = normalizeGitHubSource(source);
 
   if (!normalizedSource) {
     return [];
   }
 
-  return discoverRepositoryAgents(normalizedSource);
+  return discoverRepositoryAgents(normalizedSource, githubRef);
 }
 
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
-export async function discoverAgents(source: string): Promise<DiscoveredAgent[]> {
+export async function discoverAgents(
+  source: string,
+  githubRef?: Omit<GitHubRef, "resolvedCommit">,
+): Promise<DiscoveredAgent[]> {
   if (isLocalPath(source)) {
     return discoverLocal(source);
   }
-  return discoverGitHub(source);
+  return discoverGitHub(source, githubRef);
 }

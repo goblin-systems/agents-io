@@ -1,4 +1,5 @@
 import { fetchAgent, LocalAgentNotFoundError } from "../core/fetch.js";
+import { resolveAgentSource } from "../core/resolve-agent-source.js";
 import {
   InvalidRepositorySourceError,
   RepositoryAgentNotFoundError,
@@ -34,17 +35,46 @@ export async function validateCommand(
   options: ValidateOptions = {},
 ): Promise<void> {
   try {
-    log.info(`Validating agent from ${source}...`);
-
-    const result = await fetchAgent(source, { path: options.path });
-    const name = result.agent.frontmatter.name;
-
-    log.success(`Agent '${name}' is valid`);
-    log.dim(`  resolved source: ${result.resolvedSource}`);
+    log.inspect(`Validating agent from ${source}`);
 
     if (options.path) {
-      log.dim(`  agent path: ${options.path}`);
+      const result = await fetchAgent(source, { path: options.path });
+      const name = result.agent.frontmatter.name;
+
+      log.spacer();
+      log.success(`Agent '${name}' is valid`);
+      log.detail(`resolved source: ${result.resolvedSource}`);
+      log.detail(`agent path: ${options.path}`);
+      return;
     }
+
+    const resolvedSource = await resolveAgentSource(source);
+
+    if (resolvedSource.kind === "root") {
+      const name = resolvedSource.result.agent.frontmatter.name;
+
+      log.spacer();
+      log.success(`Agent '${name}' is valid`);
+      log.detail(`resolved source: ${resolvedSource.result.resolvedSource}`);
+      return;
+    }
+
+    if (resolvedSource.kind === "convertible-root") {
+      throw resolvedSource.rootError;
+    }
+
+    log.detail("No root agent.md found. Searching for agents in subdirectories...");
+    log.spacer();
+
+    for (const discoveredAgent of resolvedSource.agents) {
+      const result = await fetchAgent(source, { path: discoveredAgent.path });
+      log.success(`Agent '${result.agent.frontmatter.name}' is valid`);
+      log.detail(`resolved source: ${result.resolvedSource}`);
+      log.detail(`agent path: ${discoveredAgent.path}`);
+      log.spacer();
+    }
+
+    log.success(`Validated ${resolvedSource.agents.length} agent(s)`);
   } catch (error) {
     log.error(formatValidationError(error));
     process.exit(1);

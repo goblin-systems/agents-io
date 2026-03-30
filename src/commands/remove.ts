@@ -143,16 +143,17 @@ async function removeFromScope(
   const scopeLabel = isGlobal ? "global" : "project";
 
   if (dryRun) {
-    log.installProgress(`Would remove '${name}' from ${scopeLabel} scope`);
-    log.dim(`  scope: ${scopeLabel}`);
-    log.dim(`  target platforms: ${targetPlatforms.join(", ")}`);
-    log.dim(
-      `  registry action: ${nextEntry ? `update entry (remaining platforms: ${nextEntry.platforms.join(", ")})` : "remove entry"}`,
+    log.remove(`Previewing removal for ${name}`);
+    log.detail(`scope: ${scopeLabel}`);
+    log.detail(`target platforms: ${targetPlatforms.join(", ")}`);
+    log.detail(
+      `registry action: ${nextEntry ? `update entry (remaining platforms: ${nextEntry.platforms.join(", ")})` : "remove entry"}`,
     );
     return;
   }
 
-  log.info(`Removing '${name}' from ${isGlobal ? "global" : "project"} scope...`);
+  log.remove(`Removing ${name}`);
+  log.detail(`scope: ${isGlobal ? "global" : "project"}`);
 
   for (const platform of targetPlatforms) {
     const adapter = getAdapter(platform);
@@ -163,7 +164,7 @@ async function removeFromScope(
 
     try {
       await adapter.uninstall(name, projectRoot, isGlobal);
-      log.success(`Removed from ${platform} (${isGlobal ? "global" : "project"})`);
+      log.detail(`removed from ${platform}`);
     } catch (err) {
       log.warn(
         `Failed to remove from ${platform}: ${err instanceof Error ? err.message : String(err)}`,
@@ -173,14 +174,16 @@ async function removeFromScope(
 
   if (!nextEntry) {
     await removeAgent(name, isGlobal, projectRoot);
-    log.success(`Agent '${name}' removed from ${isGlobal ? "global" : "project"} scope`);
+    log.spacer();
+    log.success(`Removal complete for ${name}`);
+    log.detail(`Scope: ${isGlobal ? "global" : "project"}`);
     return;
   }
 
   await addAgent(name, nextEntry, isGlobal, projectRoot);
-  log.success(
-    `Removed ${targetPlatforms.join(", ")} from ${name} (${isGlobal ? "global" : "project"})`,
-  );
+  log.spacer();
+  log.success(`Removal complete for ${name}`);
+  log.detail(`Remaining platforms: ${nextEntry.platforms.join(", ")}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,27 +223,33 @@ export async function removeCommand(
       if (selectedNames.length === 0) {
         const scopeLabel = isGlobal ? "global" : "project";
         if (Object.keys(installedAgents).length === 0) {
-          log.info(`No agents installed in ${scopeLabel} scope.`);
+          log.detail(`No agents installed in ${scopeLabel} scope.`);
           return;
         }
 
         if (requestedPlatform) {
-          log.info(`No agents installed for ${requestedPlatform} in ${scopeLabel} scope.`);
+          log.detail(`No agents installed for ${requestedPlatform} in ${scopeLabel} scope.`);
           return;
         }
 
-        log.info("No agents selected.");
+        log.detail("No agents selected.");
         return;
       }
 
       if (dryRun) {
-        log.info("Dry run preview - no changes were made.");
+        log.remove("Preparing dry run");
+        log.detail("No changes will be written.");
+        log.spacer();
       }
 
       for (const selectedName of selectedNames) {
         const entry = installedAgents[selectedName];
         if (!entry) {
           continue;
+        }
+
+        if (selectedName !== selectedNames[0]) {
+          log.spacer();
         }
 
         await removeFromScope(
@@ -254,6 +263,7 @@ export async function removeCommand(
       }
 
       if (dryRun) {
+        log.spacer();
         log.success(`Dry run complete for ${selectedNames.length} agent(s)`);
       }
 
@@ -330,10 +340,16 @@ export async function removeCommand(
     }
 
     if (dryRun) {
-      log.info("Dry run preview - no changes were made.");
+      log.remove("Preparing dry run");
+      log.detail("No changes will be written.");
+      log.spacer();
     }
 
     for (const target of removeTargets) {
+      if (target !== removeTargets[0]) {
+        log.spacer();
+      }
+
       await removeFromScope(
         name,
         projectRoot,
@@ -345,6 +361,7 @@ export async function removeCommand(
     }
 
     if (dryRun) {
+      log.spacer();
       log.success(`Dry run complete for ${name}`);
     }
   } catch (err) {

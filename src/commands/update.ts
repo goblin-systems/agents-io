@@ -1,65 +1,29 @@
 import { cancel, isCancel, multiselect, select } from "@clack/prompts";
-import { fetchAgent } from "../core/fetch.js";
-import { hashContent, readLockFile, writeLockFile } from "../core/registry.js";
+import {
+  areAllInstalledPlatformsCurrent,
+  fetchLockEntryAgent,
+  getAdapter,
+  getStoredPlatformHashes,
+} from "../core/lock-entry.js";
+import { readLockFile, writeLockFile } from "../core/registry.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
-import opencodeAdapter from "../adapters/opencode.js";
-import claudeCodeAdapter from "../adapters/claude-code.js";
-import codexAdapter from "../adapters/codex.js";
-import kiroAdapter from "../adapters/kiro.js";
-import type { Adapter, InstalledAgent, ParsedAgent, Platform } from "../types.js";
-
-// ---------------------------------------------------------------------------
-// Adapter registry
-// ---------------------------------------------------------------------------
-
-const adapters: Adapter[] = [opencodeAdapter, claudeCodeAdapter, codexAdapter, kiroAdapter];
-
-function getAdapter(name: Platform): Adapter | undefined {
-  return adapters.find((a) => a.name === name);
-}
-
-function getStoredPlatformHashes(
-  entry: InstalledAgent,
-): Partial<Record<Platform, string>> {
-  const hashes: Partial<Record<Platform, string>> = { ...(entry.platformHashes ?? {}) };
-
-  for (const platform of entry.platforms) {
-    hashes[platform] ??= entry.hash;
-  }
-
-  return hashes;
-}
-
-function areAllInstalledPlatformsCurrent(
-  platforms: Platform[],
-  platformHashes: Partial<Record<Platform, string>>,
-  hash: string,
-): boolean {
-  return platforms.every((platform) => platformHashes[platform] === hash);
-}
+import type { GitHubRef, InstalledAgent, ParsedAgent, Platform } from "../types.js";
 
 interface ComparedAgent {
   agent: ParsedAgent;
   newHash: string;
   targetPlatforms: Platform[];
   alreadyCurrent: boolean;
-}
-
-function getFetchSource(entry: InstalledAgent): string {
-  return entry.sourceType === "local"
-    ? entry.sourceUrl
-    : (entry.repositoryUrl ?? entry.source);
+  githubRef?: GitHubRef;
 }
 
 async function compareInstalledAgent(
   entry: InstalledAgent,
   requestedPlatform?: Platform,
 ): Promise<ComparedAgent> {
-  const fetchSource = getFetchSource(entry);
-  const fetchOptions = entry.agentPath ? { path: entry.agentPath } : undefined;
-  const result = await fetchAgent(fetchSource, fetchOptions);
-  const newHash = hashContent(result.agent.raw);
+  const result = await fetchLockEntryAgent(entry, "update");
+  const newHash = result.hash;
   const storedPlatformHashes = getStoredPlatformHashes(entry);
   const targetPlatforms = requestedPlatform ? [requestedPlatform] : entry.platforms;
   const alreadyCurrent = requestedPlatform
@@ -71,6 +35,7 @@ async function compareInstalledAgent(
     newHash,
     targetPlatforms,
     alreadyCurrent,
+    githubRef: result.githubRef,
   };
 }
 
@@ -193,16 +158,16 @@ export async function updateCommand(
       if (selectedNames.length === 0) {
         const scopeLabel = isGlobal ? "global" : "project";
         if (requestedPlatform) {
-          log.info(`No agents installed for ${requestedPlatform} in ${scopeLabel} scope.`);
+          log.detail(`No agents installed for ${requestedPlatform} in ${scopeLabel} scope.`);
           return;
         }
 
         if (Object.keys(allAgents).length === 0) {
-          log.info(`No agents installed in ${scopeLabel} scope.`);
+          log.detail(`No agents installed in ${scopeLabel} scope.`);
           return;
         }
 
-        log.info("No agents selected.");
+        log.detail("No agents selected.");
         return;
       }
 
@@ -219,7 +184,19 @@ export async function updateCommand(
     let updateAvailableCount = 0;
     let couldNotCheckCount = 0;
 
+    log.progress(checkOnly ? "Checking agents" : "Updating agents");
+    log.detail(`scope: ${isGlobal ? "global" : "project"}`);
+    if (requestedPlatform) {
+      log.detail(`platform: ${requestedPlatform}`);
+    }
+    log.detail(agentsToUpdate.map(([agentName]) => agentName).join(", "));
+    log.spacer();
+
     for (const [agentName, entry] of agentsToUpdate) {
+      if (agentName !== agentsToUpdate[0]?.[0]) {
+        log.spacer();
+      }
+
       if (requestedPlatform && !entry.platforms.includes(requestedPlatform)) {
         const platformMessage = `${agentName} is not installed for ${requestedPlatform}`;
 
@@ -227,7 +204,7 @@ export async function updateCommand(
           log.warn(`${platformMessage}; could not be checked`);
           couldNotCheckCount++;
         } else {
-          log.warn(`  ${platformMessage}, skipping`);
+          log.warn(`${platformMessage}, skipping`);
         }
 
         continue;
@@ -237,7 +214,7 @@ export async function updateCommand(
         const comparison = await compareInstalledAgent(entry, requestedPlatform);
 
         if (comparison.alreadyCurrent) {
-          log.info(
+          log.detail(
             checkOnly
               ? `${agentName} is up to date`
               : `No update available for '${agentName}'.`,
@@ -251,6 +228,9 @@ export async function updateCommand(
           updateAvailableCount++;
           continue;
         }
+
+        log.sync(`Applying update for ${agentName}`);
+        log.detail(comparison.targetPlatforms.join(", "));
 
         for (const platform of comparison.targetPlatforms) {
           const adapter = getAdapter(platform);
@@ -280,9 +260,10 @@ export async function updateCommand(
           installedAt: new Date().toISOString(),
           platforms: entry.platforms,
           platformHashes: nextPlatformHashes,
+          githubRef: comparison.githubRef ?? entry.githubRef,
         };
 
-        log.success(`  ${agentName} updated`);
+        log.success(`${agentName} updated`);
         updatedCount++;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -293,12 +274,14 @@ export async function updateCommand(
           continue;
         }
 
-        log.error(`  Failed to update ${agentName}: ${message}`);
+        log.error(`Failed to update ${agentName}: ${message}`);
       }
     }
 
     if (checkOnly) {
-      log.info(
+      log.spacer();
+      log.success("Check complete");
+      log.detail(
         `Checked ${agentsToUpdate.length} agent(s): ${upToDateCount} up to date, ${updateAvailableCount} update available, ${couldNotCheckCount} could not be checked`,
       );
       return;
@@ -307,9 +290,9 @@ export async function updateCommand(
     // Write updated lock file once
     await writeLockFile(lockFile, isGlobal, projectRoot);
 
-    log.info(
-      `${updatedCount} agent(s) updated, ${upToDateCount} already up to date`,
-    );
+    log.spacer();
+    log.success("Update complete");
+    log.detail(`${updatedCount} agent(s) updated, ${upToDateCount} already up to date`);
   } catch (err) {
     log.error(
       err instanceof Error

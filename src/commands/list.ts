@@ -7,6 +7,14 @@ import type { InstalledAgent } from "../types.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
 
+function formatGitHubRefLabel(agent: InstalledAgent): string {
+  if (!agent.githubRef) {
+    return "github, unpinned";
+  }
+
+  return `${agent.githubRef.type}:${agent.githubRef.value} @ ${agent.githubRef.resolvedCommit.slice(0, 7)}`;
+}
+
 export interface ListOptions {
   verbose?: boolean;
 }
@@ -14,7 +22,7 @@ export interface ListOptions {
 function formatSourceLabel(agent: InstalledAgent): string {
   return agent.sourceType === "local"
     ? `${agent.sourceUrl} (local)`
-    : agent.source;
+    : `${agent.source} (${formatGitHubRefLabel(agent)})`;
 }
 
 function logAgentLine(name: string, agent: InstalledAgent, verbose: boolean): void {
@@ -22,24 +30,24 @@ function logAgentLine(name: string, agent: InstalledAgent, verbose: boolean): vo
   const sourceLabel = formatSourceLabel(agent);
 
   if (!verbose) {
-    log.dim(`  ${name} — ${sourceLabel} ${platforms}`);
+    log.detail(`${name} - ${sourceLabel} ${platforms}`);
     return;
   }
 
   const status = `[${getAgentRegistryStatus(agent)}]`;
-  log.dim(`  ${name} ${status} — ${sourceLabel} ${platforms}`);
+  log.detail(`${name} ${status} - ${sourceLabel} ${platforms}`);
 }
 
 async function logScope(scopeLabel: string, global: boolean, projectRoot: string): Promise<number> {
   const details = await readLockFileDetails(global, projectRoot);
   const entries = Object.entries(details.lockFile.agents);
 
-  log.info(`${scopeLabel}:`);
-  log.dim(`  state: ${details.exists ? "present" : "missing"}`);
-  log.dim(`  lock file: ${details.path}`);
+  log.section(scopeLabel);
+  log.detail(`state: ${details.exists ? "present" : "missing"}`);
+  log.detail(`lock file: ${details.path}`);
 
   if (entries.length === 0) {
-    log.dim("  no agents installed");
+    log.detail("no agents installed");
     return 0;
   }
 
@@ -63,29 +71,36 @@ export async function listCommand(options: ListOptions = {}): Promise<void> {
     if (projectEntries.length === 0 && globalEntries.length === 0) {
       if (options.verbose) {
         await logScope("Project agents", false, projectRoot);
+        log.spacer();
         await logScope("Global agents", true, projectRoot);
         return;
       }
 
-      log.info("No agents installed");
+      log.section("Installed agents");
+      log.detail("No agents installed");
       return;
     }
 
     if (options.verbose) {
       await logScope("Project agents", false, projectRoot);
+      log.spacer();
       await logScope("Global agents", true, projectRoot);
       return;
     }
 
     if (projectEntries.length > 0) {
-      log.info("Project agents:");
+      log.section("Project agents");
       for (const [name, agent] of projectEntries) {
         logAgentLine(name, agent, false);
       }
     }
 
     if (globalEntries.length > 0) {
-      log.info("Global agents:");
+      if (projectEntries.length > 0) {
+        log.spacer();
+      }
+
+      log.section("Global agents");
       for (const [name, agent] of globalEntries) {
         logAgentLine(name, agent, false);
       }

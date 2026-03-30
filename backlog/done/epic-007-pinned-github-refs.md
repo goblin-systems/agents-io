@@ -1,6 +1,6 @@
 # Epic 007: Pinned GitHub refs for install and update
 
-Status: Active. Active epics live in `backlog/`. Move completed epics to `backlog/done/`.
+Status: Done. Completed epics live in `backlog/done/`.
 
 ## Problem and outcome
 

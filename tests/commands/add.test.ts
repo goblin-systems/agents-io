@@ -3,10 +3,12 @@ import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { join, resolve } from "path";
 import { readLockFile } from "../../src/core/registry.js";
 import {
-  cleanTempDir,
-  makeTempDir,
   buildAgentContent,
+  cleanTempDir,
+  commitAll,
   createCachedGitHubRepository,
+  makeTempDir,
+  runGit,
 } from "../helpers.js";
 
 const CANCEL_SIGNAL = Symbol("cancel");
@@ -39,6 +41,7 @@ const originalCwd = process.cwd();
 const originalConfigDir = process.env.AGENTS_IO_CONFIG_DIR;
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
+const originalExit = process.exit;
 const loggedMessages: string[] = [];
 const errorMessages: string[] = [];
 
@@ -56,6 +59,9 @@ beforeEach(() => {
   console.error = (...args: unknown[]) => {
     errorMessages.push(args.map(String).join(" "));
   };
+  process.exit = ((code?: number) => {
+    throw new Error(`EXIT:${code ?? 0}`);
+  }) as typeof process.exit;
 });
 
 afterEach(async () => {
@@ -63,6 +69,7 @@ afterEach(async () => {
   process.env.AGENTS_IO_CONFIG_DIR = originalConfigDir;
   console.log = originalConsoleLog;
   console.error = originalConsoleError;
+  process.exit = originalExit;
 
   if (tempDir) {
     await cleanTempDir(tempDir);
@@ -123,10 +130,12 @@ describe("add command (local sources)", () => {
     expect(entry.agentPath).toBe("");
     expect(entry.platforms).toEqual(["opencode"]);
     expect(entry.platformHashes).toEqual({ opencode: entry.hash });
-    expect(loggedMessages).toContain("[>] Installing for opencode...");
-    expect(loggedMessages).toContain("[#] Installed for opencode");
-    expect(loggedMessages).not.toContainEqual(expect.stringContaining("ℹ □ Installing for opencode..."));
-    expect(loggedMessages).not.toContainEqual(expect.stringContaining("✔ ■ Installed for opencode"));
+    expect(loggedMessages).toContain("⫸  Installing agent");
+    expect(loggedMessages).toContain("| local-agent -> opencode");
+    expect(loggedMessages).toContain("✓  Installation complete");
+    expect(loggedMessages[loggedMessages.indexOf("✓  Installation complete") - 1]).toBe("|");
+    expect(loggedMessages).not.toContainEqual(expect.stringContaining("[>]"));
+    expect(loggedMessages).not.toContainEqual(expect.stringContaining("[#]"));
   });
 
   test("runs a direct local dry run without network access or writes", async () => {
@@ -162,8 +171,8 @@ describe("add command (local sources)", () => {
     expect(multiselectCalls).toHaveLength(1);
     expect(selectCalls[0]?.message).toBe("Where should this agent be installed?");
     expect(multiselectCalls[0]?.message).toBe("Which platforms should this agent be installed for?");
-    expect(loggedMessages.some((message) => message.includes("Dry run preview - no changes were made."))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("[>] Would install local-agent"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Preparing dry run"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing local-agent"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes(`resolved source: ${resolve(sourceDir)}`))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("scope: project"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("platforms: opencode, claude-code"))).toBe(true);
@@ -246,15 +255,25 @@ describe("add command (local sources)", () => {
     expect(multiselectCalls[0]?.message).toBe("Found 2 agents. Select which to install:");
     expect(selectCalls[0]?.message).toBe("Where should this agent be installed?");
     expect(multiselectCalls[1]?.message).toBe("Which platforms should this agent be installed for?");
-    expect(loggedMessages.some((message) => message.includes("Dry run preview - no changes were made."))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("[>] Would install alpha-agent"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("[>] Would install beta-agent"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("⇄  Previewing selected agents"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Preparing dry run"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing alpha-agent"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing beta-agent"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes(`resolved source: ${resolve(sourceRoot)}`))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("scope: global"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("platforms: opencode, kiro"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("agent path: alpha"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("agent path: agents/beta"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Dry run complete for 2 agent(s)"))).toBe(true);
+    expect(loggedMessages[loggedMessages.indexOf("⇄  Previewing selected agents") - 1]).toBe("|");
+    const fetchIndexes = loggedMessages.reduce<number[]>((indexes, message, index) => {
+      if (message === `⇅  Fetching agent from ${sourceRoot}`) {
+        indexes.push(index);
+      }
+      return indexes;
+    }, []);
+    expect(fetchIndexes).toHaveLength(3);
+    expect(loggedMessages[loggedMessages.indexOf("✓  Dry run complete for 2 agent(s)") - 1]).toBe("|");
     expect(await pathExists(join(projectDir, "agents"))).toBe(false);
     expect(await pathExists(join(projectDir, ".kiro"))).toBe(false);
     expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
@@ -299,5 +318,305 @@ describe("add command (local sources)", () => {
     expect(entry.sourceType).toBe("github");
     expect(entry.sourceUrl).toBe("https://github.com/goblin-systems/agents-io-team");
     expect(entry.repositoryUrl).toBe("git@github.com:goblin-systems/agents-io-team.git");
+  });
+
+  test("persists pinned GitHub branch metadata in the lock file", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await setupProject(projectDir);
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "team-agent",
+          description: "Main branch agent",
+        }),
+      },
+    });
+
+    await runGit(["checkout", "-b", "release"], repository.workingRepoDir);
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "team-agent",
+        description: "Release branch agent",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Release branch agent");
+    const releaseCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
+    await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
+
+    process.chdir(projectDir);
+    await addCommand("goblin-systems/agents-io-team", {
+      platform: "opencode",
+      global: false,
+      branch: "release",
+    });
+
+    const installedFile = await readFile(join(projectDir, "agents", "team-agent.md"), "utf-8");
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["team-agent"];
+
+    expect(installedFile).toContain("Release branch agent");
+    expect(entry.githubRef).toEqual({
+      type: "branch",
+      value: "release",
+      resolvedCommit: releaseCommit,
+    });
+  });
+
+  test("rejects mutually exclusive GitHub ref flags", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    await setupProject(projectDir);
+
+    const cliPath = join(originalCwd, "src", "index.ts");
+    const result = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        "run",
+        cliPath,
+        "add",
+        "goblin-systems/agents-io-team",
+        "--branch",
+        "release",
+        "--tag",
+        "v1.0.0",
+        "--platform",
+        "opencode",
+        "--global",
+      ],
+      cwd: projectDir,
+      env: process.env,
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toContain("Use exactly one of --branch, --tag, or --commit");
+  });
+
+  test("prompts before best-effort converting a non-native GitHub agent and installs after confirmation", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await setupProject(projectDir);
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "support-bot",
+      files: {
+        "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
+      },
+    });
+
+    selectResponses = ["convert"];
+    process.chdir(projectDir);
+
+    await addCommand("goblin-systems/support-bot", {
+      platform: "opencode",
+      global: false,
+    });
+
+    const installedFile = await readFile(join(projectDir, "agents", "support-bot.md"), "utf-8");
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["support-bot"];
+
+    expect(selectCalls).toHaveLength(1);
+    expect(selectCalls[0]?.message).toEqual(expect.stringContaining("best-effort conversion"));
+    expect(selectCalls[0]?.message).toEqual(expect.stringContaining("may fail"));
+    expect(installedFile).toContain("name: support-bot");
+    expect(installedFile).toContain("Best-effort conversion from AGENTS.md");
+    expect(installedFile).toContain("You help triage incoming issues.");
+    expect(entry.source).toBe("goblin-systems/support-bot");
+    expect(entry.sourceType).toBe("github");
+    expect(entry.agentPath).toBe("");
+    expect(loggedMessages).toContain("| converted from: AGENTS.md");
+  });
+
+  test("blocks Kiro installs when enabled generic tools cannot be mapped", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "kiro-hard-fail");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "kiro-hard-fail",
+        description: "Kiro hard fail agent",
+        extra: {
+          tools: {
+            fetch: true,
+            web: true,
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+
+    await expect(addCommand(sourceDir, { platform: "kiro", global: false })).rejects.toThrow("EXIT:1");
+
+    expect(errorMessages.some((message) => message.includes("Compatibility check failed for kiro-hard-fail"))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("[kiro]"))).toBe(true);
+    expect(await pathExists(join(projectDir, ".kiro"))).toBe(false);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
+  });
+
+  test("warns when Codex drops metadata during install", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "codex-warning");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "codex-warning",
+        description: "Codex warning agent",
+        mode: "primary",
+        tools: { read: true },
+        extra: {
+          color: "#112233",
+          kiro: { tools: ["read"] },
+        },
+      }),
+      "utf-8",
+    );
+    await writeFile(
+      join(sourceDir, "agent.json"),
+      JSON.stringify({ temperature: 0.4 }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+    await addCommand(sourceDir, { platform: "codex", global: false });
+
+    expect(loggedMessages).toContain("!  Compatibility warnings for codex-warning");
+    expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("mode"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("agent.json:temperature"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("`mode: primary`"))).toBe(true);
+    expect(await pathExists(join(projectDir, "AGENTS.md"))).toBe(true);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(true);
+  });
+
+  test("warns when Kiro drops some unmapped generic tools", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "kiro-warning");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "kiro-warning",
+        description: "Kiro warning agent",
+        extra: {
+          tools: {
+            read: true,
+            fetch: true,
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+    await addCommand(sourceDir, { platform: "kiro", global: false });
+
+    expect(loggedMessages).toContain("!  Compatibility warnings for kiro-warning");
+    expect(loggedMessages.some((message) => message.includes("[kiro]") && message.includes("generic tools fetch do not map"))).toBe(true);
+    expect(await pathExists(join(projectDir, ".kiro", "agents", "kiro-warning.json"))).toBe(true);
+  });
+
+  test("stops multi-agent installs before writes when one selected agent is incompatible", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceRoot = join(tempDir, "agents-root");
+
+    await setupProject(projectDir);
+    await mkdir(join(sourceRoot, "safe"), { recursive: true });
+    await mkdir(join(sourceRoot, "blocked"), { recursive: true });
+    await writeFile(
+      join(sourceRoot, "safe", "agent.md"),
+      buildAgentContent({
+        name: "safe-agent",
+        description: "Safe agent",
+        extra: {
+          tools: {
+            read: true,
+          },
+        },
+      }),
+      "utf-8",
+    );
+    await writeFile(
+      join(sourceRoot, "blocked", "agent.md"),
+      buildAgentContent({
+        name: "blocked-agent",
+        description: "Blocked agent",
+        extra: {
+          tools: {
+            fetch: true,
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    multiselectResponses = [["safe", "blocked"]];
+    process.chdir(projectDir);
+
+    await expect(addCommand(sourceRoot, { platform: "kiro", global: false })).rejects.toThrow("EXIT:1");
+
+    expect(await pathExists(join(projectDir, ".kiro", "agents", "safe-agent.json"))).toBe(false);
+    expect(await pathExists(join(projectDir, ".kiro", "agents", "blocked-agent.json"))).toBe(false);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
+  });
+
+  test("skips non-native GitHub conversion when the user declines", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await setupProject(projectDir);
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "support-bot",
+      files: {
+        "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
+      },
+    });
+
+    selectResponses = ["skip"];
+    process.chdir(projectDir);
+
+    await addCommand("goblin-systems/support-bot", {
+      platform: "opencode",
+      global: false,
+    });
+
+    expect(selectCalls).toHaveLength(1);
+    expect(loggedMessages).toContain("| Conversion skipped.");
+    expect(await pathExists(join(projectDir, "agents"))).toBe(false);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, unlink, readdir, rmdir, access } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
+import { deriveKiroTools } from "../core/platform-compatibility.js";
 import type { Adapter, AdapterContext } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -19,32 +20,6 @@ async function exists(p: string): Promise<boolean> {
 /** Resolve the `.kiro` directory for the given scope. */
 function resolveKiroDir(projectDir: string, global: boolean): string {
   return global ? join(homedir(), ".kiro") : join(projectDir, ".kiro");
-}
-
-/** Map the generic OpenCode `tools` record to Kiro tool names. */
-function deriveTools(tools: Record<string, boolean>): string[] {
-  const result = new Set<string>();
-
-  for (const [tool, enabled] of Object.entries(tools)) {
-    if (!enabled) continue;
-
-    switch (tool) {
-      case "read":
-      case "glob":
-      case "grep":
-        result.add("read");
-        break;
-      case "write":
-      case "edit":
-        result.add("write");
-        break;
-      case "bash":
-        result.add("shell");
-        break;
-    }
-  }
-
-  return result.size > 0 ? [...result] : ["read", "write", "shell"];
 }
 
 // ---------------------------------------------------------------------------
@@ -119,10 +94,11 @@ async function install(ctx: AdapterContext): Promise<void> {
 
   // If no explicit kiro tools override, derive from generic tools map
   if (!data.tools) {
-    data.tools =
-      frontmatter.tools && Object.keys(frontmatter.tools).length > 0
-        ? deriveTools(frontmatter.tools)
-        : ["read", "write", "shell"];
+    const derivedTools = frontmatter.tools && Object.keys(frontmatter.tools).length > 0
+      ? deriveKiroTools(frontmatter.tools)
+      : [];
+
+    data.tools = derivedTools.length > 0 ? derivedTools : ["read", "write", "shell"];
   }
 
   await writeFile(agentFile, JSON.stringify(data, null, 2) + "\n", "utf-8");

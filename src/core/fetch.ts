@@ -1,7 +1,7 @@
 import { resolve, join, dirname } from "path";
 import { readFile, stat } from "fs/promises";
 import { parseAgentFile, parseAgentFromPath } from "./parse.js";
-import type { ParsedAgent, AgentSettings } from "../types.js";
+import type { ParsedAgent, AgentSettings, GitHubRef } from "../types.js";
 import {
   fetchRepositoryAgent,
   InvalidRepositorySourceError,
@@ -11,6 +11,8 @@ import {
 export interface FetchOptions {
   /** Subfolder within the repo (or local path) that contains agent.md. */
   path?: string;
+  /** Optional pinned GitHub ref. Ignored for local sources. */
+  githubRef?: Omit<GitHubRef, "resolvedCommit">;
 }
 
 export interface FetchResult {
@@ -19,6 +21,7 @@ export interface FetchResult {
   /** "owner/repo" for github, absolute path for local. */
   resolvedSource: string;
   repositoryUrl?: string;
+  resolvedCommit?: string;
 }
 
 export class LocalAgentNotFoundError extends Error {
@@ -111,13 +114,18 @@ async function fetchGitHubAgent(
     throw new InvalidRepositorySourceError(source);
   }
 
-  const { content, settings } = await fetchRepositoryAgent(normalizedSource, options?.path);
+  const repositoryResult = await fetchRepositoryAgent(
+    normalizedSource,
+    options?.path,
+    options?.githubRef,
+  );
 
   return {
-    agent: parseAgentFile(content, settings as AgentSettings),
+    agent: parseAgentFile(repositoryResult.content, repositoryResult.settings as AgentSettings),
     sourceType: "github",
     resolvedSource: normalizedSource.canonical,
     repositoryUrl: normalizedSource.cloneUrl,
+    resolvedCommit: repositoryResult.resolvedCommit,
   };
 }
 

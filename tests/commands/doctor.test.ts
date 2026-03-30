@@ -136,9 +136,10 @@ describe("doctor command", () => {
 
     await doctorCommand();
 
-    expect(loggedMessages.some((message) => message.includes("Checking project install health..."))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("◈  Checking project install health"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Healthy project scope"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("checked 1 agent(s) across 2 platform install(s)"))).toBe(true);
+    expect(loggedMessages).toContain("|");
     expect(errorMessages).toHaveLength(0);
   });
 
@@ -148,7 +149,7 @@ describe("doctor command", () => {
     await doctorCommand();
 
     expect(loggedMessages.some((message) => message.includes("No agents installed in project scope"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("status: healthy (lock file missing, scope is empty)"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("| status: healthy (lock file missing, scope is empty)"))).toBe(true);
     expect(errorMessages).toHaveLength(0);
   });
 
@@ -175,6 +176,7 @@ describe("doctor command", () => {
     await expect(doctorCommand()).rejects.toThrow("EXIT:1");
 
     expect(errorMessages.some((message) => message.includes("Found 1 issue(s) in project scope"))).toBe(true);
+    expect(loggedMessages).toContain("|");
     expect(loggedMessages.some((message) => message.includes("mixed registry hashes"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("agents-io list --verbose"))).toBe(true);
   });
@@ -229,7 +231,7 @@ describe("doctor command", () => {
 
     await doctorCommand({ global: true });
 
-    expect(loggedMessages.some((message) => message.includes("Checking global install health..."))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("◈  Checking global install health"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Healthy global scope"))).toBe(true);
   });
 

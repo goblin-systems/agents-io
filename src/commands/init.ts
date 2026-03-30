@@ -117,7 +117,11 @@ TODO: Explain the agent's purpose and capabilities.
 
   // --- Done ---------------------------------------------------------------
 
-  log.success(`Created agent template at ./${agentName}/`);
-  log.dim(`Edit ${agentName}/agent.md to define your agent, then push to GitHub.`);
-  log.dim(`Add ${agentName}/agent.json later if you need optional tool-specific settings.`);
+  log.install(`Initializing ${agentName}`);
+  log.detail(`Created ./${agentName}/agent.md`);
+  log.detail(`Created ./${agentName}/README.md`);
+  log.spacer();
+  log.success(`Agent template ready at ./${agentName}/`);
+  log.detail(`Edit ${agentName}/agent.md to define your agent, then push to GitHub.`);
+  log.detail(`Add ${agentName}/agent.json later if you need optional tool-specific settings.`);
 }

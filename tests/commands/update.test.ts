@@ -231,7 +231,7 @@ describe("update command", () => {
     expect(selectCalls).toHaveLength(0);
     expect(multiselectCalls).toHaveLength(0);
     expect(loggedMessages.some((message) => message.includes("No agents installed in project scope."))).toBe(false);
-    expect(loggedMessages.some((message) => message.includes("No agents installed for opencode in project scope."))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("| No agents installed for opencode in project scope."))).toBe(true);
   });
 
   test("prints an explicit message when a selected agent has no update available", async () => {
@@ -368,7 +368,9 @@ describe("update command", () => {
     expect(selectCalls).toHaveLength(0);
     expect(multiselectCalls).toHaveLength(0);
     expect(loggedMessages.some((message) => message.includes("test-agent has an update available"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("✓  Check complete"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Checked 1 agent(s): 0 up to date, 1 update available, 0 could not be checked"))).toBe(true);
+    expect(loggedMessages.filter((message) => message === "|").length).toBe(2);
     expect(lockAfter).toBe(lockBefore);
     expect(installedAfter).toBe(installedBefore);
     expect(lockStatAfter.mtimeMs).toBe(lockStatBefore.mtimeMs);
@@ -477,7 +479,9 @@ describe("update command", () => {
     expect(loggedMessages.some((message) => message.includes("current-agent is up to date"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("outdated-agent has an update available"))).toBe(true);
     expect(errorMessages.some((message) => message.includes("missing-agent could not be checked:"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("✓  Check complete"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Checked 3 agent(s): 1 up to date, 1 update available, 1 could not be checked"))).toBe(true);
+    expect(loggedMessages.filter((message) => message === "|").length).toBe(4);
   });
 
   test("supports targeted updates from legacy lock entries without platformHashes", async () => {
@@ -546,6 +550,123 @@ describe("update command", () => {
       opencode: updatedHash,
       "claude-code": initialHash,
     });
+  });
+
+  test("honors stored pinned GitHub branch refs during update", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    await writeProjectMarker(projectDir);
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "test-agent",
+          description: "Main branch agent",
+          body: "\n# Test Agent\n\nMain branch body.\n",
+        }),
+      },
+    });
+
+    await runGit(["checkout", "-b", "release"], repository.workingRepoDir);
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Release branch v1",
+        body: "\n# Test Agent\n\nRelease branch body v1.\n",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Release branch v1");
+    const releaseCommitV1 = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
+    await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
+
+    await runGit(["checkout", "main"], repository.workingRepoDir);
+
+    const initialResult = await fetchAgent("goblin-systems/agents-io-team", {
+      githubRef: { type: "branch", value: "release" },
+    });
+    await opencodeAdapter.install({
+      agent: initialResult.agent,
+      projectDir,
+      global: false,
+    });
+
+    const initialHash = hashContent(initialResult.agent.raw);
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: "goblin-systems/agents-io-team",
+            sourceType: "github",
+            sourceUrl: "https://github.com/goblin-systems/agents-io-team",
+            agentPath: "",
+            installedAt: "2026-03-28T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash: initialHash,
+            platformHashes: { opencode: initialHash },
+            githubRef: {
+              type: "branch",
+              value: "release",
+              resolvedCommit: releaseCommitV1,
+            },
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Main branch drift",
+        body: "\n# Test Agent\n\nMain branch drift body.\n",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Main branch drift");
+    await runGit(["push", "origin", "main"], repository.workingRepoDir);
+
+    await runGit(["checkout", "release"], repository.workingRepoDir);
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Release branch v2",
+        body: "\n# Test Agent\n\nRelease branch body v2.\n",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Release branch v2");
+    const releaseCommitV2 = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
+    await runGit(["push", "origin", "release"], repository.workingRepoDir);
+
+    process.chdir(projectDir);
+    await updateCommand("test-agent");
+
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["test-agent"];
+    const installedFile = await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8");
+
+    expect(installedFile).toContain("Release branch v2");
+    expect(installedFile).toContain("Release branch body v2.");
+    expect(installedFile).not.toContain("Main branch drift");
+    expect(entry.githubRef).toEqual({
+      type: "branch",
+      value: "release",
+      resolvedCommit: releaseCommitV2,
+    });
+    expect(entry.platformHashes).toEqual({ opencode: entry.hash });
   });
 
   test("refreshes cached GitHub repositories during update", async () => {

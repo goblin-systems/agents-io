@@ -3,7 +3,7 @@
 Install AI coding agents from GitHub — or your local filesystem — into your project. One command, any tool.
 
 ```bash
-npx agents-io add owner/repo
+npx agents-io@latest add owner/repo
 ```
 
 agents-io fetches an agent definition from a GitHub repo and installs it in the correct format for whichever AI coding tools you use — OpenCode, Claude Code, Codex, or Kiro.
@@ -11,12 +11,14 @@ agents-io fetches an agent definition from a GitHub repo and installs it in the 
 ## Install
 
 ```bash
-# No install needed — run directly:
-npx agents-io add owner/repo
+# No install needed — run the latest published CLI directly:
+npx agents-io@latest add owner/repo
 
 # Or install globally:
 npm i -g agents-io
 ```
+
+Use `npx agents-io@latest ...` when you want `npx` to fetch and run the latest published `agents-io` version instead of a cached or previously resolved CLI version.
 
 ## Automation
 
@@ -28,13 +30,13 @@ npm i -g agents-io
 
 ```bash
 # Install an agent from GitHub
-npx agents-io add acme/code-reviewer
+npx agents-io@latest add acme/code-reviewer
 
 # Install for a specific platform only
-npx agents-io add acme/code-reviewer --platform claude-code
+npx agents-io@latest add acme/code-reviewer --platform claude-code
 
 # Install globally (user-level, not project-level)
-npx agents-io add acme/code-reviewer --global
+npx agents-io@latest add acme/code-reviewer --global
 
 # List installed agents
 npx agents-io list
@@ -48,6 +50,9 @@ npx agents-io validate owner/repo
 # Diagnose the current install state
 npx agents-io doctor
 npx agents-io doctor --global
+
+# Sync project installs from the committed lock file
+npx agents-io sync
 
 # Remove an agent
 npx agents-io remove code-reviewer
@@ -83,6 +88,9 @@ npx agents-io add owner/repo --platform claude-code
 npx agents-io add owner/repo --global
 npx agents-io add owner/repo --dry-run
 npx agents-io add owner/repo --path agents/reviewer
+npx agents-io add owner/repo --branch release
+npx agents-io add owner/repo --tag v1.2.0
+npx agents-io add owner/repo --commit 0123abcd
 npx agents-io add ./path/to/agent
 npx agents-io add /absolute/path/to/agent
 npx agents-io add C:\Users\you\agents\reviewer
@@ -94,6 +102,9 @@ npx agents-io add C:\Users\you\agents\reviewer
 | `--global` | Install to the tool's global config directory instead of the project |
 | `--dry-run` | Preview the add plan without writing adapter files, config files, or lock files |
 | `--path <path>` | Subfolder within the repo that contains `agent.md` |
+| `--branch <name>` | Pin a GitHub install to a branch and store the resolved commit in the lock file |
+| `--tag <name>` | Pin a GitHub install to a tag and store the resolved commit in the lock file |
+| `--commit <sha>` | Pin a GitHub install to an exact commit |
 
 Flags skip the corresponding prompts. Without flags, agents-io asks interactively:
 
@@ -102,7 +113,18 @@ Flags skip the corresponding prompts. Without flags, agents-io asks interactivel
 
 When `--platform` is omitted, agents-io auto-detects which tools you use by checking for their config files (`opencode.json`, `.claude/`, `.codex/`, `.kiro/`). If none are found, it defaults to OpenCode.
 
+GitHub refs are optional. If you omit them, agents-io tracks the repository's default branch and `update` follows that branch over time. If you pass exactly one of `--branch`, `--tag`, or `--commit`, agents-io records that pin in `agents-io-lock.json` and future `update` runs stay on that ref instead of drifting back to the default branch.
+
 `add --dry-run` follows the same fetch, discovery, prompt, and validation flow as a real install, but it stops before any files are written. The preview reports the resolved source, chosen scope, and target platforms so you can verify the plan first.
+
+For GitHub sources only, if the repo looks strongly agent-like but does not ship a compatible `agent.md`, `add` can offer an explicit best-effort conversion from a known non-native file such as `AGENTS.md` or `CLAUDE.md`. The CLI never converts silently: it prompts first, warns that conversion may fail or behave unexpectedly, and continues only if the generated candidate passes normal validation.
+
+When `add` already knows the exact target platforms, it also runs lightweight compatibility checks before writing anything. In the current MVP this means:
+
+- Kiro blocks installs that would otherwise widen permissions because none of the enabled generic tools map cleanly and no explicit `kiro.tools` override is present
+- Kiro warns when some enabled generic tools are ignored during mapping
+- Codex warns when frontmatter or `agent.json` settings will be dropped during conversion into `AGENTS.md`
+- non-OpenCode targets warn when `mode: primary` cannot be preserved
 
 ### `list`
 
@@ -113,7 +135,7 @@ npx agents-io list
 npx agents-io list --verbose
 ```
 
-Use `--verbose` when you want to inspect the lock file state without opening `agents-io-lock.json` manually. Verbose output keeps the default `list` behavior unchanged and adds:
+Use `--verbose` when you want to inspect the lock file state without opening `agents-io-lock.json` manually. Both default and verbose list output show whether a GitHub agent is pinned or unpinned. Verbose output also adds:
 
 - the resolved lock file path for project and global scope
 - the scope state (`present` or `missing`)
@@ -134,7 +156,7 @@ Verbose mode still shows each scope and lock file path even when that scope has 
 
 Validates an agent source using the same fetch and parse rules as `add`, but does not install anything or write a lock file.
 
-Use `validate` when you want to check that an agent can be consumed by `agents-io` before sharing or installing it. Use `add` when you want to install it.
+Use `validate` when you want to check that an agent can be consumed by `agents-io` before sharing or installing it. Use `add` when you want install-time platform compatibility warnings or failures for explicitly selected targets.
 
 ```bash
 npx agents-io validate owner/repo
@@ -169,6 +191,24 @@ When issues are found, `doctor` reports the affected agent, scope, and platform 
 | Flag | Description |
 |------|-------------|
 | `--global` | Check the global install scope instead of the project scope |
+
+### `sync`
+
+Reads the committed project `agents-io-lock.json` and installs or repairs the tracked project-scoped agents for their recorded platforms.
+
+```bash
+npx agents-io sync
+```
+
+`sync` is intentionally narrow in the first release:
+
+- it uses the project lock file as the source of truth
+- it only touches project-scoped installs
+- it installs missing tracked agents and repairs tracked installs that are missing local artifacts or registry entries
+- it does not prune extra local installs that are not in the lock file
+- it does not rewrite the project lock file while syncing
+
+If a tracked entry cannot be resolved back to the locked content, or if the lock entry records an unsupported platform, `sync` reports that clearly, continues with other safe work, and exits non-zero so CI or onboarding scripts do not treat the project as fully aligned.
 
 ### `remove <name>`
 
@@ -239,6 +279,8 @@ npx agents-io update code-reviewer --platform opencode
 
 agents-io tracks content hashes in the lock file. If the hash matches, the agent is skipped. If it differs, the agent is re-installed.
 
+For GitHub installs, `update` uses the stored source plus any recorded pin metadata. Unpinned installs follow the latest default-branch state. Pinned branch and tag installs re-resolve that ref on each update and refresh the stored `resolvedCommit`. Pinned commit installs stay fixed to that commit until you reinstall with a different ref.
+
 When you run `update --platform <platform>`, agents-io updates only that adapter's files but keeps the full `installedFor` metadata intact.
 
 `update --check` uses the same comparison logic as a real update, but it stays inspection-only.
@@ -247,10 +289,11 @@ When you run `update --platform <platform>`, agents-io updates only that adapter
 
 - Use `validate` to check whether a source agent definition can be fetched and parsed before installation.
 - Use `doctor` to diagnose local install health for one scope after installation.
+- Use `sync` to recreate the project-scoped installs recorded in a committed `agents-io-lock.json` without changing that lock file.
 - Use `list --verbose` to inspect lock file paths and stored registry hash state for both scopes.
 - Use `update --check` to compare installed agents with their original source and see whether newer content is available.
 
-In short: `validate` checks source inputs, `doctor` checks local install state, `list --verbose` shows recorded metadata, and `update --check` checks source freshness.
+In short: `validate` checks source inputs, `doctor` checks local install state, `sync` recreates project installs from the lock file, `list --verbose` shows recorded metadata, and `update --check` checks source freshness.
 
 ## How it works
 

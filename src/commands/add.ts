@@ -1,15 +1,17 @@
 import { select, multiselect, isCancel, cancel } from "@clack/prompts";
-import { fetchAgent, LocalAgentNotFoundError } from "../core/fetch.js";
-import { discoverAgents } from "../core/discover.js";
-import { RepositoryAgentNotFoundError } from "../core/repositories.js";
+import { convertGitHubAgent, type ConvertibleGitHubAgent } from "../core/convert-github-agent.js";
+import { fetchAgent } from "../core/fetch.js";
+import { getPlatformCompatibilityIssues } from "../core/platform-compatibility.js";
 import { hashContent, addAgent } from "../core/registry.js";
+import { resolveAgentSource } from "../core/resolve-agent-source.js";
+import { RepositoryAgentNotFoundError } from "../core/repositories.js";
 import { log } from "../utils/logger.js";
 import { findProjectRoot } from "../utils/paths.js";
 import opencodeAdapter from "../adapters/opencode.js";
 import claudeCodeAdapter from "../adapters/claude-code.js";
 import codexAdapter from "../adapters/codex.js";
 import kiroAdapter from "../adapters/kiro.js";
-import type { Adapter, ParsedAgent, Platform } from "../types.js";
+import type { Adapter, GitHubRef, ParsedAgent, Platform } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Adapter registry
@@ -19,13 +21,6 @@ const adapters: Adapter[] = [opencodeAdapter, claudeCodeAdapter, codexAdapter, k
 
 function getAdapter(name: Platform): Adapter | undefined {
   return adapters.find((a) => a.name === name);
-}
-
-function isDiscoverableRootMiss(error: unknown): boolean {
-  return (
-    error instanceof LocalAgentNotFoundError ||
-    error instanceof RepositoryAgentNotFoundError
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -107,18 +102,18 @@ async function installAgent(
   sourceType: "github" | "local",
   agentPath: string,
   repositoryUrl?: string,
+  githubRef?: GitHubRef,
 ): Promise<void> {
   const platformNames: Platform[] = [];
 
   for (const adapter of targets) {
-    log.installProgress(`Installing ${agent.frontmatter.name} for ${adapter.name}...`);
+    log.detail(`${agent.frontmatter.name} -> ${adapter.name}`);
     await adapter.install({
       agent,
       projectDir: projectRoot,
       global: isGlobal,
     });
     platformNames.push(adapter.name);
-    log.installSuccess(`Installed ${agent.frontmatter.name} for ${adapter.name}`);
   }
 
   await addAgent(
@@ -131,6 +126,7 @@ async function installAgent(
           ? `https://github.com/${resolvedSource}`
           : resolvedSource,
       repositoryUrl,
+      githubRef,
       agentPath,
       installedAt: new Date().toISOString(),
       platforms: platformNames,
@@ -151,14 +147,88 @@ function previewAgentInstall(
   resolvedSource: string,
   agentPath: string,
 ): void {
-  log.installProgress(`Would install ${agent.frontmatter.name}`);
-  log.dim(`  resolved source: ${resolvedSource}`);
-  log.dim(`  scope: ${isGlobal ? "global" : "project"}`);
-  log.dim(`  platforms: ${targets.map((target) => target.name).join(", ")}`);
+  log.install(`Previewing ${agent.frontmatter.name}`);
+  log.detail(`resolved source: ${resolvedSource}`);
+  log.detail(`scope: ${isGlobal ? "global" : "project"}`);
+  log.detail(`platforms: ${targets.map((target) => target.name).join(", ")}`);
 
   if (agentPath) {
-    log.dim(`  agent path: ${agentPath}`);
+    log.detail(`agent path: ${agentPath}`);
   }
+}
+
+interface PreparedInstall {
+  result: Awaited<ReturnType<typeof fetchAgent>>;
+  agentPath: string;
+}
+
+function reportCompatibilityIssues(agent: ParsedAgent, targets: Adapter[]): void {
+  const issues = getPlatformCompatibilityIssues(
+    agent,
+    targets.map((target) => target.name),
+  );
+
+  if (issues.length === 0) {
+    return;
+  }
+
+  const warnings = issues.filter((issue) => issue.severity === "warning");
+  const errors = issues.filter((issue) => issue.severity === "error");
+
+  if (warnings.length > 0) {
+    log.warn(`Compatibility warnings for ${agent.frontmatter.name}`);
+    for (const warning of warnings) {
+      log.detail(`[${warning.platform}] ${warning.message}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `Compatibility check failed for ${agent.frontmatter.name}: ${errors
+        .map((error) => `[${error.platform}] ${error.message}`)
+        .join(" ")}`,
+    );
+  }
+}
+
+async function prepareSelectedAgents(
+  source: string,
+  selectedPaths: string[],
+  githubRef: Omit<GitHubRef, "resolvedCommit"> | undefined,
+  targets: Adapter[],
+): Promise<PreparedInstall[]> {
+  const preparedAgents: PreparedInstall[] = [];
+
+  for (const agentPath of selectedPaths) {
+    log.fetch(`Fetching agent from ${source}`);
+    log.detail(`agent path: ${agentPath}`);
+    const result = await fetchAgent(source, { path: agentPath, githubRef });
+    reportCompatibilityIssues(result.agent, targets);
+    preparedAgents.push({ result, agentPath });
+  }
+
+  return preparedAgents;
+}
+
+async function promptGitHubConversion(
+  source: string,
+  conversion: ConvertibleGitHubAgent,
+): Promise<boolean> {
+  const decision = await select({
+    message: `No compatible agent.md was found in ${source}. Found ${conversion.sourcePath} instead. Try a best-effort conversion? This may fail, be incomplete, or behave unexpectedly after install.`,
+    options: [
+      { value: "convert", label: "Try conversion" },
+      { value: "skip", label: "Do not convert", hint: "safe default" },
+    ],
+    initialValue: "skip",
+  });
+
+  if (isCancel(decision)) {
+    cancel("Installation cancelled.");
+    process.exit(0);
+  }
+
+  return decision === "convert";
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +240,39 @@ export interface AddOptions {
   global?: boolean;
   dryRun?: boolean;
   path?: string;
+  branch?: string;
+  tag?: string;
+  commit?: string;
+}
+
+function getRequestedGitHubRef(options: AddOptions): Omit<GitHubRef, "resolvedCommit"> | undefined {
+  const refs = [
+    options.branch ? { type: "branch" as const, value: options.branch } : undefined,
+    options.tag ? { type: "tag" as const, value: options.tag } : undefined,
+    options.commit ? { type: "commit" as const, value: options.commit } : undefined,
+  ].filter((value): value is { type: "branch" | "tag" | "commit"; value: string } => {
+    return value !== undefined;
+  });
+
+  if (refs.length > 1) {
+    throw new Error("Use exactly one of --branch, --tag, or --commit");
+  }
+
+  return refs[0];
+}
+
+function resolveStoredGitHubRef(
+  requestedGitHubRef: Omit<GitHubRef, "resolvedCommit"> | undefined,
+  resolvedCommit: string | undefined,
+): GitHubRef | undefined {
+  if (!requestedGitHubRef || !resolvedCommit) {
+    return undefined;
+  }
+
+  return {
+    ...requestedGitHubRef,
+    resolvedCommit,
+  };
 }
 
 export async function addCommand(
@@ -177,6 +280,8 @@ export async function addCommand(
   options: AddOptions,
 ): Promise<void> {
   try {
+    const githubRef = getRequestedGitHubRef(options);
+
     // 1. If --path is specified, use direct fetch (no discovery)
     if (options.path) {
       await addSingleAgent(source, options);
@@ -184,36 +289,32 @@ export async function addCommand(
     }
 
     // 2. Try to fetch a single agent at root
-    let rootResult: Awaited<ReturnType<typeof fetchAgent>> | undefined;
-    let rootError: Error | undefined;
-
-    try {
-      log.info(`Fetching agent from ${source}...`);
-      rootResult = await fetchAgent(source);
-    } catch (err) {
-      rootError = err instanceof Error ? err : new Error(String(err));
-    }
+    log.fetch(`Fetching agent from ${source}`);
+    const resolvedSource = await resolveAgentSource(source, githubRef);
 
     // 3. If root fetch succeeded, install normally
-    if (rootResult) {
-      await addSingleAgent(source, options, rootResult);
+    if (resolvedSource.kind === "root") {
+      await addSingleAgent(source, options, resolvedSource.result);
       return;
     }
 
-    // 4. Root fetch failed — check if it's a "not found" error
-    if (!rootError || !isDiscoverableRootMiss(rootError)) {
-      throw rootError!;
+    if (resolvedSource.kind === "convertible-root") {
+      const shouldConvert = await promptGitHubConversion(source, resolvedSource.conversion);
+
+      if (!shouldConvert) {
+        log.detail("Conversion skipped.");
+        return;
+      }
+
+      await addSingleAgent(source, options, resolvedSource.conversion.result, resolvedSource.conversion);
+      return;
     }
 
-    // 5. Attempt discovery
-    log.info("No root agent.md found. Searching for agents in subdirectories...");
-    const discovered = await discoverAgents(source);
+    // 4. Root fetch missed — use discovered subdirectory agents
+    log.detail("No root agent.md found. Searching for agents in subdirectories...");
+    const discovered = resolvedSource.agents;
 
-    if (discovered.length === 0) {
-      throw rootError;
-    }
-
-    // 6. Multiselect prompt
+    // 5. Multiselect prompt
     const selected = await multiselect({
       message: `Found ${discovered.length} agents. Select which to install:`,
       options: discovered.map((a) => ({
@@ -235,23 +336,48 @@ export async function addCommand(
     const selectedPaths = selected as string[];
 
     if (selectedPaths.length === 0) {
-      log.info("No agents selected.");
+      log.detail("No agents selected.");
       return;
     }
 
-    // 7. Scope and platform selection (once for all agents)
+    // 6. Scope and platform selection (once for all agents)
     const projectRoot = findProjectRoot();
     const isGlobal = await promptScope(options, projectRoot);
     const targets = await promptTargets(options, projectRoot);
+    const selectedAgents = discovered
+      .filter((agent) => selectedPaths.includes(agent.path))
+      .map((agent) => agent.name);
+
+    log.spacer();
+    log.sync(options.dryRun ? "Previewing selected agents" : "Preparing selected agents");
+    log.detail(source);
+    log.detail(selectedAgents.join(", "));
+    log.spacer();
 
     if (options.dryRun) {
-      log.info("Dry run preview - no changes were made.");
+      log.install("Preparing dry run");
+      log.detail("No changes will be written.");
+      log.spacer();
+    } else {
+      log.install("Installing agents");
+      log.detail(selectedAgents.join(", "));
+      log.spacer();
     }
 
-    // 8. Fetch and install each selected agent
-    for (const agentPath of selectedPaths) {
-      log.info(`Fetching agent from ${source} (path: ${agentPath})...`);
-      const result = await fetchAgent(source, { path: agentPath });
+    const preparedAgents = await prepareSelectedAgents(
+      source,
+      selectedPaths,
+      githubRef,
+      targets,
+    );
+
+    // 7. Install each selected agent
+    for (const [index, preparedAgent] of preparedAgents.entries()) {
+      if (index > 0) {
+        log.spacer();
+      }
+
+      const { result, agentPath } = preparedAgent;
 
       if (options.dryRun) {
         previewAgentInstall(
@@ -273,15 +399,20 @@ export async function addCommand(
         result.sourceType,
         agentPath,
         result.repositoryUrl,
+        resolveStoredGitHubRef(githubRef, result.resolvedCommit),
       );
     }
 
     if (options.dryRun) {
+      log.spacer();
       log.success(`Dry run complete for ${selectedPaths.length} agent(s)`);
+      log.detail(`Platforms: ${targets.map((target) => target.name).join(", ")}`);
       return;
     }
 
-    log.success(`Installed ${selectedPaths.length} agent(s) successfully`);
+    log.spacer();
+    log.success("Installation complete");
+    log.detail(`For ${targets.map((target) => target.name).join(", ")}`);
   } catch (err) {
     log.error(
       err instanceof Error ? err.message : `Failed to add agent: ${String(err)}`,
@@ -298,62 +429,103 @@ async function addSingleAgent(
   source: string,
   options: AddOptions,
   prefetched?: Awaited<ReturnType<typeof fetchAgent>>,
+  conversion?: ConvertibleGitHubAgent,
 ): Promise<void> {
-  const result = prefetched ?? await (async () => {
-    log.info(`Fetching agent from ${source}...`);
-    return fetchAgent(source, { path: options.path });
-  })();
+  const requestedGitHubRef = getRequestedGitHubRef(options);
+  const fetched = prefetched
+    ? { result: prefetched, conversion }
+    : await (async () => {
+      log.fetch(`Fetching agent from ${source}`);
+
+      try {
+        return {
+          result: await fetchAgent(source, {
+            path: options.path,
+            githubRef: requestedGitHubRef,
+          }),
+          conversion: undefined,
+        };
+      } catch (error) {
+        if (!(error instanceof RepositoryAgentNotFoundError)) {
+          throw error;
+        }
+
+        const candidate = await convertGitHubAgent(source, {
+          path: options.path,
+          githubRef: requestedGitHubRef,
+        });
+
+        if (!candidate) {
+          throw error;
+        }
+
+        const shouldConvert = await promptGitHubConversion(source, candidate);
+
+        if (!shouldConvert) {
+          log.detail("Conversion skipped.");
+          return null;
+        }
+
+        return {
+          result: candidate.result,
+          conversion: candidate,
+        };
+      }
+    })();
+
+  if (!fetched) {
+    return;
+  }
+
+  const { result, conversion: activeConversion } = fetched;
 
   const { agent, sourceType, resolvedSource } = result;
   const { name, description } = agent.frontmatter;
 
-  log.info(`Found agent: ${name} — ${description}`);
+  log.sync("Preparing agent");
+  log.detail(source);
+  log.detail(`${name} - ${description}`);
+  if (activeConversion) {
+    log.detail(`converted from: ${activeConversion.sourcePath}`);
+  }
+  if (options.path) {
+    log.detail(`agent path: ${options.path}`);
+  }
+  log.spacer();
 
   const projectRoot = findProjectRoot();
   const isGlobal = await promptScope(options, projectRoot);
   const targets = await promptTargets(options, projectRoot);
+  reportCompatibilityIssues(agent, targets);
 
   if (options.dryRun) {
-    log.info("Dry run preview - no changes were made.");
+    log.install("Preparing dry run");
+    log.detail("No changes will be written.");
+    log.spacer();
     previewAgentInstall(agent, targets, isGlobal, resolvedSource, options.path ?? "");
+    log.spacer();
     log.success(`Dry run complete for ${name}`);
+    log.detail(`Platforms: ${targets.map((target) => target.name).join(", ")}`);
     return;
   }
 
-  const platformNames: Platform[] = [];
+  log.install("Installing agent");
+  log.detail(name);
+  log.spacer();
 
-  for (const adapter of targets) {
-    log.installProgress(`Installing for ${adapter.name}...`);
-    await adapter.install({
-      agent,
-      projectDir: projectRoot,
-      global: isGlobal,
-    });
-    platformNames.push(adapter.name);
-    log.installSuccess(`Installed for ${adapter.name}`);
-  }
-
-  await addAgent(
-    name,
-    {
-      source: resolvedSource,
-      sourceType,
-      sourceUrl:
-        sourceType === "github"
-          ? `https://github.com/${resolvedSource}`
-          : resolvedSource,
-      repositoryUrl: result.repositoryUrl,
-      agentPath: options.path ?? "",
-      installedAt: new Date().toISOString(),
-      platforms: platformNames,
-      hash: hashContent(agent.raw),
-      platformHashes: Object.fromEntries(
-        platformNames.map((platform) => [platform, hashContent(agent.raw)]),
-      ) as Partial<Record<Platform, string>>,
-    },
-    isGlobal,
+  await installAgent(
+    agent,
+    targets,
     projectRoot,
+    isGlobal,
+    resolvedSource,
+    sourceType,
+    options.path ?? "",
+    result.repositoryUrl,
+    resolveStoredGitHubRef(requestedGitHubRef, result.resolvedCommit),
   );
 
-  log.success(`Agent ${name} installed successfully`);
+  log.spacer();
+  log.success("Installation complete");
+  log.detail(`For ${targets.map((target) => target.name).join(", ")}`);
 }

@@ -421,12 +421,13 @@ describe("remove command", () => {
     const opencodeStatAfter = await stat(opencodePath);
     const claudeStatAfter = await stat(claudePath);
 
-    expect(loggedMessages.some((message) => message.includes("Dry run preview - no changes were made."))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Would remove 'test-agent' from project scope"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Preparing dry run"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing removal for test-agent"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("scope: project"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("target platforms: opencode"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("registry action: update entry (remaining platforms: claude-code)"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Dry run complete for test-agent"))).toBe(true);
+    expect(loggedMessages.filter((message) => message === "|").length).toBe(2);
     expect(lockAfter).toBe(lockBefore);
     expect(opencodeAfter).toBe(opencodeBefore);
     expect(claudeAfter).toBe(claudeBefore);
@@ -480,11 +481,12 @@ describe("remove command", () => {
 
     expect(selectCalls).toHaveLength(1);
     expect(multiselectCalls).toHaveLength(1);
-    expect(loggedMessages.some((message) => message.includes("Dry run preview - no changes were made."))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Would remove 'test-agent' from project scope"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Would remove 'other-agent' from project scope"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Preparing dry run"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing removal for test-agent"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing removal for other-agent"))).toBe(true);
     expect(loggedMessages.filter((message) => message.includes("registry action: remove entry"))).toHaveLength(2);
     expect(loggedMessages.some((message) => message.includes("Dry run complete for 2 agent(s)"))).toBe(true);
+    expect(loggedMessages.filter((message) => message === "|").length).toBe(3);
     expect(lockAfter).toBe(lockBefore);
     expect(testAfter).toBe(testBefore);
     expect(otherAfter).toBe(otherBefore);
@@ -622,9 +624,10 @@ describe("remove command", () => {
 
     await removeCommand("test-agent", { all: true, dryRun: true });
 
-    expect(loggedMessages.some((message) => message.includes("Would remove 'test-agent' from project scope"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Would remove 'test-agent' from global scope"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Previewing removal for test-agent"))).toBe(true);
+    expect(loggedMessages.filter((message) => message.includes("Previewing removal for test-agent"))).toHaveLength(2);
     expect(loggedMessages.filter((message) => message.includes("registry action: remove entry"))).toHaveLength(2);
+    expect(loggedMessages.filter((message) => message === "|").length).toBe(3);
     expect(await readFile(localLockPath, "utf-8")).toBe(localLockBefore);
     expect(await readFile(globalLockPath, "utf-8")).toBe(globalLockBefore);
     expect(await readFile(localAgentPath, "utf-8")).toBe(localAgentBefore);

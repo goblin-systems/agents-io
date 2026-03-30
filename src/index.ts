@@ -15,6 +15,9 @@ program
   .option("--global", "install globally")
   .option("--dry-run", "preview add without writing changes")
   .option("--path <path>", "subfolder in repo")
+  .option("--branch <name>", "pin a GitHub install to a branch")
+  .option("--tag <name>", "pin a GitHub install to a tag")
+  .option("--commit <sha>", "pin a GitHub install to a commit")
   .action(async (source: string, options: Record<string, unknown>) => {
     const { addCommand } = await import("./commands/add.js");
     await addCommand(source, options);
@@ -45,6 +48,14 @@ program
   .action(async (options: Record<string, unknown>) => {
     const { doctorCommand } = await import("./commands/doctor.js");
     await doctorCommand(options);
+  });
+
+program
+  .command("sync")
+  .description("Sync project-scoped agents from the lock file")
+  .action(async () => {
+    const { syncCommand } = await import("./commands/sync.js");
+    await syncCommand();
   });
 
 program

@@ -60,6 +60,7 @@ function buildEntry(overrides: Partial<InstalledAgent> = {}): InstalledAgent {
     hash: overrides.hash ?? "abc123def456",
     platformHashes: overrides.platformHashes,
     repositoryUrl: overrides.repositoryUrl,
+    githubRef: overrides.githubRef,
   };
 }
 
@@ -99,7 +100,7 @@ describe("list command", () => {
 
     await listCommand();
 
-    expect(loggedMessages.some((message) => message.includes("Project agents:"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("▨  Project agents"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("lock file:"))).toBe(false);
     expect(loggedMessages.some((message) => message.includes("[synced]"))).toBe(false);
   });
@@ -137,8 +138,8 @@ describe("list command", () => {
 
     await listCommand({ verbose: true });
 
-    expect(loggedMessages.some((message) => message.includes("Project agents:"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Global agents:"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("▨  Project agents"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("▨  Global agents"))).toBe(true);
     expect(
       loggedMessages.some((message) =>
         message.includes(`lock file: ${join(projectDir, "agents-io-lock.json")}`),
@@ -154,5 +155,36 @@ describe("list command", () => {
     expect(loggedMessages.some((message) => message.includes("[synced]"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("[mixed]"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("no agents installed"))).toBe(true);
+    expect(loggedMessages).toContain("|");
+  });
+
+  test("shows pinned and unpinned GitHub state in list output", async () => {
+    const { projectDir } = await setupProject();
+
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          pinned: buildEntry({
+            githubRef: {
+              type: "branch",
+              value: "release",
+              resolvedCommit: "abcdef1234567890",
+            },
+          }),
+          unpinned: buildEntry({
+            source: "owner/other-repo",
+            sourceUrl: "https://github.com/owner/other-repo",
+          }),
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await listCommand();
+
+    expect(loggedMessages.some((message) => message.includes("branch:release @ abcdef1"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("github, unpinned"))).toBe(true);
   });
 });

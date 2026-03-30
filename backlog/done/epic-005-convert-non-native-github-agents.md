@@ -1,6 +1,6 @@
 # Epic 005: Optional conversion for non-native GitHub agents
 
-Status: Active. Active epics live in `backlog/`. Move completed epics to `backlog/done/`.
+Status: Done. Completed epics live in `backlog/done/`.
 
 ## Problem and outcome
 

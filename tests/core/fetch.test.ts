@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { join } from "path";
+import { convertGitHubAgent } from "../../src/core/convert-github-agent.js";
 import { fetchAgent, isLocalPath } from "../../src/core/fetch.js";
 import { normalizeGitHubSource } from "../../src/core/repositories.js";
 import {
@@ -8,6 +9,7 @@ import {
   cleanTempDir,
   createCachedGitHubRepository,
   makeTempDir,
+  runGit,
 } from "../helpers.js";
 
 let tempDir = "";
@@ -230,5 +232,90 @@ describe("fetchAgent (local)", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test("checks out pinned GitHub branch refs and returns the resolved commit", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "team-agent",
+          description: "Main branch agent",
+        }),
+      },
+    });
+
+    await runGit(["checkout", "-b", "release"], repository.workingRepoDir);
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "team-agent",
+        description: "Release branch agent",
+      }),
+      "utf-8",
+    );
+    await runGit(["add", "."], repository.workingRepoDir);
+    await runGit(["commit", "-m", "Add release branch agent"], repository.workingRepoDir);
+    const releaseCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
+    await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
+
+    const result = await fetchAgent("goblin-systems/agents-io-team", {
+      githubRef: { type: "branch", value: "release" },
+    });
+
+    expect(result.agent.frontmatter.description).toBe("Release branch agent");
+    expect(result.resolvedCommit).toBe(releaseCommit);
+  });
+
+  test("builds a validated conversion candidate from AGENTS.md", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "support-bot",
+      files: {
+        "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
+      },
+    });
+
+    const result = await convertGitHubAgent("goblin-systems/support-bot");
+
+    expect(result).not.toBeNull();
+    expect(result?.sourceFile).toBe("AGENTS.md");
+    expect(result?.sourcePath).toBe("AGENTS.md");
+    expect(result?.result.agent.frontmatter.name).toBe("support-bot");
+    expect(result?.result.agent.frontmatter.description).toBe(
+      "Best-effort conversion from AGENTS.md in goblin-systems/support-bot",
+    );
+    expect(result?.result.agent.body).toContain("You help triage incoming issues.");
+  });
+
+  test("rejects ambiguous non-native GitHub sources during conversion detection", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "goblin-systems",
+      repo: "ambiguous-agent",
+      files: {
+        "AGENTS.md": "# Agent instructions\n\nOne format.\n",
+        "CLAUDE.md": "# Claude instructions\n\nAnother format.\n",
+      },
+    });
+
+    const result = await convertGitHubAgent("goblin-systems/ambiguous-agent");
+
+    expect(result).toBeNull();
   });
 });
