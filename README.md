@@ -20,6 +20,30 @@ npm i -g agents-io
 
 Use `npx agents-io@latest ...` when you want `npx` to fetch and run the latest published `agents-io` version instead of a cached or previously resolved CLI version.
 
+## Featured agents
+
+If you want a strong first example after installing the CLI, start with `Manage`:
+
+```bash
+npx agents-io@latest add goblin-systems/agents-io-team --path manage
+```
+
+`Manage` is the manager and orchestrator for the team. You give it an objective, and it defines success conditions and definition of done, breaks the work into workstreams, assigns specialist agents, reviews outcomes, tracks risks and decisions, and keeps execution moving until the work is accepted complete. 
+
+`Manage` does not implement work itself; subagents handle their own tasks and report back.
+
+You can also install the full team:
+
+```bash
+npx agents-io@latest add goblin-systems/agents-io-team
+```
+
+Other notable examples:
+
+- `creator` helps create agents or convert existing repositories, agent configs, and skills into agents-io compatible agents.
+
+- `sniff-test` reviews agents for suspicious, deceptive, or risky behavior using cautious static analysis.
+
 ## Automation
 
 - GitHub Actions CI runs on pushes to `master` and pull requests targeting `master`, and executes `bun run typecheck`, `bun test`, and `bun run build`.
