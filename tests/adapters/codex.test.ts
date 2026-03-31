@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { readFile, writeFile, access } from "fs/promises";
+import { readFile, access, readdir } from "fs/promises";
 import { join } from "path";
 import codexAdapter from "../../src/adapters/codex.js";
 import type { AdapterContext, ParsedAgent } from "../../src/types.js";
@@ -31,9 +31,18 @@ function makeCtx(agent: ParsedAgent, projectDir: string): AdapterContext {
   return { agent, projectDir, global: false };
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("codex adapter", () => {
   describe("install", () => {
-    test("creates AGENTS.md with delimited section", async () => {
+    test("creates agents directory and .toml file with correct content", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({
         name: "my-agent",
@@ -42,42 +51,25 @@ describe("codex adapter", () => {
 
       await codexAdapter.install(makeCtx(agent, tmpDir));
 
-      const content = await readFile(join(tmpDir, "AGENTS.md"), "utf-8");
-      expect(content).toContain("<!-- agnts:my-agent:start -->");
-      expect(content).toContain("<!-- agnts:my-agent:end -->");
-      expect(content).toContain("## My-Agent");
-      expect(content).toContain("My agent");
+      const tomlPath = join(tmpDir, ".codex", "agents", "my-agent.toml");
+      const content = await readFile(tomlPath, "utf-8");
+
+      expect(content).toContain('name = "my-agent"');
+      expect(content).toContain('description = "My agent"');
+      expect(content).toContain('developer_instructions = """');
       expect(content).toContain("# Test Agent");
+      expect(content).toContain("You are a test agent.");
+      expect(content).toContain('"""');
     });
 
-    test("appends to existing AGENTS.md", async () => {
+    test("replaces existing .toml file for same agent name", async () => {
       tmpDir = await makeTempDir();
-      // Pre-populate AGENTS.md with some existing content
-      await writeFile(
-        join(tmpDir, "AGENTS.md"),
-        "# Existing Content\n\nSome instructions.\n",
-        "utf-8",
-      );
 
-      const agent = makeAgent({ name: "new-agent" });
-      await codexAdapter.install(makeCtx(agent, tmpDir));
-
-      const content = await readFile(join(tmpDir, "AGENTS.md"), "utf-8");
-      // Preserves existing content
-      expect(content).toContain("# Existing Content");
-      expect(content).toContain("Some instructions.");
-      // Has new agent section
-      expect(content).toContain("<!-- agnts:new-agent:start -->");
-    });
-
-    test("replaces existing section for same agent name", async () => {
-      tmpDir = await makeTempDir();
       const agent1 = makeAgent({
         name: "my-agent",
         description: "Version 1",
         body: "\nOriginal body.\n",
       });
-
       await codexAdapter.install(makeCtx(agent1, tmpDir));
 
       const agent2 = makeAgent({
@@ -85,56 +77,102 @@ describe("codex adapter", () => {
         description: "Version 2",
         body: "\nUpdated body.\n",
       });
-
       await codexAdapter.install(makeCtx(agent2, tmpDir));
 
-      const content = await readFile(join(tmpDir, "AGENTS.md"), "utf-8");
-      // Should have updated content
-      expect(content).toContain("Version 2");
+      const tomlPath = join(tmpDir, ".codex", "agents", "my-agent.toml");
+      const content = await readFile(tomlPath, "utf-8");
+
+      expect(content).toContain('description = "Version 2"');
       expect(content).toContain("Updated body.");
-      // Should NOT have old content
       expect(content).not.toContain("Version 1");
       expect(content).not.toContain("Original body.");
-      // Should only have one start/end pair
-      const starts = content.match(/<!-- agnts:my-agent:start -->/g);
-      expect(starts).toHaveLength(1);
+    });
+
+    test("handles multiple agents as separate .toml files", async () => {
+      tmpDir = await makeTempDir();
+
+      const agentA = makeAgent({ name: "agent-a", description: "Agent A" });
+      const agentB = makeAgent({ name: "agent-b", description: "Agent B" });
+
+      await codexAdapter.install(makeCtx(agentA, tmpDir));
+      await codexAdapter.install(makeCtx(agentB, tmpDir));
+
+      const agentsDir = join(tmpDir, ".codex", "agents");
+      const entries = await readdir(agentsDir);
+      expect(entries).toContain("agent-a.toml");
+      expect(entries).toContain("agent-b.toml");
+
+      const contentA = await readFile(join(agentsDir, "agent-a.toml"), "utf-8");
+      const contentB = await readFile(join(agentsDir, "agent-b.toml"), "utf-8");
+      expect(contentA).toContain('name = "agent-a"');
+      expect(contentB).toContain('name = "agent-b"');
+    });
+
+    test("verify TOML content structure", async () => {
+      tmpDir = await makeTempDir();
+      const agent = makeAgent({
+        name: "structured-agent",
+        description: "Structured description",
+        body: "\n# Heading\n\nParagraph content.\n",
+      });
+
+      await codexAdapter.install(makeCtx(agent, tmpDir));
+
+      const tomlPath = join(tmpDir, ".codex", "agents", "structured-agent.toml");
+      const content = await readFile(tomlPath, "utf-8");
+
+      // Verify structure: three top-level key = value pairs
+      const lines = content.split("\n");
+      expect(lines[0]).toBe('name = "structured-agent"');
+      expect(lines[1]).toBe('description = "Structured description"');
+      expect(lines[2]).toBe('developer_instructions = """');
+      // Body content follows
+      expect(content).toContain("# Heading");
+      expect(content).toContain("Paragraph content.");
+      // Ends with closing triple-quotes
+      expect(content).toMatch(/"""\n$/);
     });
   });
 
   describe("uninstall", () => {
-    test("removes section from AGENTS.md", async () => {
+    test("removes the .toml file", async () => {
       tmpDir = await makeTempDir();
-      // Install two agents
-      const agent1 = makeAgent({ name: "agent-a" });
-      const agent2 = makeAgent({ name: "agent-b" });
-      await codexAdapter.install(makeCtx(agent1, tmpDir));
-      await codexAdapter.install(makeCtx(agent2, tmpDir));
+      const agent = makeAgent({ name: "remove-me" });
+      await codexAdapter.install(makeCtx(agent, tmpDir));
 
-      // Remove one
-      await codexAdapter.uninstall("agent-a", tmpDir, false);
+      await codexAdapter.uninstall("remove-me", tmpDir, false);
 
-      const content = await readFile(join(tmpDir, "AGENTS.md"), "utf-8");
-      expect(content).not.toContain("<!-- agnts:agent-a:start -->");
-      expect(content).toContain("<!-- agnts:agent-b:start -->");
+      const tomlPath = join(tmpDir, ".codex", "agents", "remove-me.toml");
+      expect(await fileExists(tomlPath)).toBe(false);
     });
 
-    test("deletes AGENTS.md if empty after removal", async () => {
+    test("removes agents directory if empty after removal", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({ name: "only-agent" });
       await codexAdapter.install(makeCtx(agent, tmpDir));
 
       await codexAdapter.uninstall("only-agent", tmpDir, false);
 
-      let fileExists = true;
-      try {
-        await access(join(tmpDir, "AGENTS.md"));
-      } catch {
-        fileExists = false;
-      }
-      expect(fileExists).toBe(false);
+      const agentsDir = join(tmpDir, ".codex", "agents");
+      expect(await fileExists(agentsDir)).toBe(false);
     });
 
-    test("is a no-op when AGENTS.md doesn't exist", async () => {
+    test("does not remove agents directory if other agents remain", async () => {
+      tmpDir = await makeTempDir();
+      const agentA = makeAgent({ name: "agent-a" });
+      const agentB = makeAgent({ name: "agent-b" });
+      await codexAdapter.install(makeCtx(agentA, tmpDir));
+      await codexAdapter.install(makeCtx(agentB, tmpDir));
+
+      await codexAdapter.uninstall("agent-a", tmpDir, false);
+
+      const agentsDir = join(tmpDir, ".codex", "agents");
+      const entries = await readdir(agentsDir);
+      expect(entries).toContain("agent-b.toml");
+      expect(entries).not.toContain("agent-a.toml");
+    });
+
+    test("is a no-op when .toml file doesn't exist", async () => {
       tmpDir = await makeTempDir();
       // Should not throw
       await codexAdapter.uninstall("nonexistent", tmpDir, false);

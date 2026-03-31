@@ -54,14 +54,6 @@ function getScopeDir(projectRoot: string, global: boolean, platform: Platform): 
   return global ? getGlobalDir(platform) : getProjectDir(platform, projectRoot);
 }
 
-function startTag(name: string): string {
-  return `<!-- agnts:${name}:start -->`;
-}
-
-function endTag(name: string): string {
-  return `<!-- agnts:${name}:end -->`;
-}
-
 function getOpencodeRegistry(config: Record<string, unknown>): Record<string, unknown> | undefined {
   const registry = config.agent;
   return registry && typeof registry === "object" && !Array.isArray(registry)
@@ -156,18 +148,11 @@ export async function inspectPlatformInstall(
   }
 
   if (platform === "codex") {
-    const agentsPath = join(targetDir, "AGENTS.md");
+    const agentPath = join(targetDir, ".codex", "agents", `${name}.toml`);
 
-    try {
-      const content = await readFile(agentsPath, "utf-8");
-      if (!content.includes(startTag(name)) || !content.includes(endTag(name))) {
-        issues.push({
-          message: `${name} [${scopeLabel}/${platform}] is missing its managed section in ${agentsPath}. Reinstall with \`agents-io update ${name}${global ? " --global" : ""}${entry.platforms.length > 1 ? " --platform codex" : ""}\` to restore it.`,
-        });
-      }
-    } catch (error) {
+    if (!(await pathExists(agentPath))) {
       issues.push({
-        message: `${name} [${scopeLabel}/${platform}] could not read ${agentsPath}: ${error instanceof Error ? error.message : String(error)}. Reinstall the agent or restore the file.`,
+        message: `${name} [${scopeLabel}/${platform}] is missing ${agentPath}. Reinstall with \`agents-io update ${name}${global ? " --global" : ""}${entry.platforms.length > 1 ? " --platform codex" : ""}\` or remove the stale lock entry.`,
       });
     }
 

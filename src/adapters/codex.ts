@@ -1,4 +1,4 @@
-import { readFile, writeFile, unlink, access } from "fs/promises";
+import { mkdir, writeFile, unlink, readdir, rmdir, access } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import type { Adapter, AdapterContext } from "../types.js";
@@ -16,61 +16,43 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-function startTag(name: string): string {
-  return `<!-- agnts:${name}:start -->`;
+/** Resolve the `.codex` directory for the given scope. */
+function resolveCodexDir(projectDir: string, global: boolean): string {
+  return global ? join(homedir(), ".codex") : join(projectDir, ".codex");
 }
 
-function endTag(name: string): string {
-  return `<!-- agnts:${name}:end -->`;
+// ---------------------------------------------------------------------------
+// TOML generation
+// ---------------------------------------------------------------------------
+
+/** Escape a single-line TOML string value (for name, description). */
+function escapeTomlString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-/** Title-case a string (first letter of every word upper-cased). */
-function titleCase(s: string): string {
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+/**
+ * Escape content for a TOML multi-line basic string (triple-quoted).
+ * The only sequence that needs escaping inside `"""..."""` is a literal
+ * run of three or more consecutive double-quotes — we break it up by
+ * inserting a backslash-escaped quote.
+ */
+function escapeTomlMultiline(value: string): string {
+  // Replace every occurrence of """ with ""\", which TOML interprets as
+  // two literal quotes followed by an escaped quote.
+  return value.replace(/"""/g, '""\\\"');
 }
 
-/** Build the delimited markdown section for an agent. */
-function buildSection(
-  name: string,
-  description: string,
-  body: string,
-): string {
+/** Build the TOML content for an agent file. */
+function buildToml(name: string, description: string, body: string): string {
   const lines: string[] = [
-    startTag(name),
-    `## ${titleCase(name)}`,
-    "",
-    description,
-    "",
-    body.trimEnd(),
-    endTag(name),
+    `name = "${escapeTomlString(name)}"`,
+    `description = "${escapeTomlString(description)}"`,
+    `developer_instructions = """`,
+    `${escapeTomlMultiline(body.trimEnd())}`,
+    `"""`,
+    "", // trailing newline
   ];
-
   return lines.join("\n");
-}
-
-/** Remove a named agent section from the file content, including trailing blank lines. */
-function removeSection(content: string, name: string): string {
-  const start = startTag(name);
-  const end = endTag(name);
-
-  const startIdx = content.indexOf(start);
-  if (startIdx === -1) return content;
-
-  const endIdx = content.indexOf(end, startIdx);
-  if (endIdx === -1) return content;
-
-  const before = content.slice(0, startIdx);
-  const after = content.slice(endIdx + end.length);
-
-  // Strip leading newlines from `after` to avoid stacking blank lines
-  const trimmedAfter = after.replace(/^\n+/, "");
-
-  return (before + trimmedAfter).trimEnd();
-}
-
-/** Resolve target directory based on scope. */
-function resolveTargetDir(projectDir: string, global: boolean): string {
-  return global ? join(homedir(), ".codex") : projectDir;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,13 +60,12 @@ function resolveTargetDir(projectDir: string, global: boolean): string {
 // ---------------------------------------------------------------------------
 
 async function detect(projectDir: string): Promise<boolean> {
-  const [hasAgentsMd, hasCodexDir, hasGlobalCodex] = await Promise.all([
-    exists(join(projectDir, "AGENTS.md")),
+  const [hasProjectCodex, hasGlobalCodex] = await Promise.all([
     exists(join(projectDir, ".codex")),
     exists(join(homedir(), ".codex")),
   ]);
 
-  return hasAgentsMd || hasCodexDir || hasGlobalCodex;
+  return hasProjectCodex || hasGlobalCodex;
 }
 
 async function install(ctx: AdapterContext): Promise<void> {
@@ -92,30 +73,16 @@ async function install(ctx: AdapterContext): Promise<void> {
   const { frontmatter, body } = agent;
   const name = frontmatter.name;
 
-  const targetDir = resolveTargetDir(projectDir, isGlobal);
-  const agentsMdPath = join(targetDir, "AGENTS.md");
+  const codexDir = resolveCodexDir(projectDir, isGlobal);
+  const agentsDir = join(codexDir, "agents");
+  const agentFile = join(agentsDir, `${name}.toml`);
 
-  // Read existing content
-  let content = "";
-  try {
-    content = await readFile(agentsMdPath, "utf-8");
-  } catch {
-    // File doesn't exist yet — start fresh
-  }
+  // Ensure agents directory exists
+  await mkdir(agentsDir, { recursive: true });
 
-  // If a section for this agent already exists, remove it first
-  if (content.includes(startTag(name))) {
-    content = removeSection(content, name);
-  }
-
-  // Build new section
-  const section = buildSection(name, frontmatter.description, body);
-
-  // Append — separate from existing content with a blank line
-  const trimmed = content.trimEnd();
-  const result = trimmed.length > 0 ? `${trimmed}\n\n${section}\n` : `${section}\n`;
-
-  await writeFile(agentsMdPath, result, "utf-8");
+  // Build and write the TOML file
+  const toml = buildToml(name, frontmatter.description, body);
+  await writeFile(agentFile, toml, "utf-8");
 }
 
 async function uninstall(
@@ -123,19 +90,23 @@ async function uninstall(
   projectDir: string,
   isGlobal: boolean,
 ): Promise<void> {
-  const targetDir = resolveTargetDir(projectDir, isGlobal);
-  const agentsMdPath = join(targetDir, "AGENTS.md");
+  const codexDir = resolveCodexDir(projectDir, isGlobal);
+  const agentsDir = join(codexDir, "agents");
+  const agentFile = join(agentsDir, `${name}.toml`);
 
-  if (!(await exists(agentsMdPath))) return;
+  // Remove the agent file
+  if (await exists(agentFile)) {
+    await unlink(agentFile);
+  }
 
-  const content = await readFile(agentsMdPath, "utf-8");
-  const updated = removeSection(content, name);
-
-  // If file is now empty or whitespace-only, delete it
-  if (updated.trim().length === 0) {
-    await unlink(agentsMdPath);
-  } else {
-    await writeFile(agentsMdPath, updated.trimEnd() + "\n", "utf-8");
+  // Clean up empty agents directory
+  try {
+    const entries = await readdir(agentsDir);
+    if (entries.length === 0) {
+      await rmdir(agentsDir);
+    }
+  } catch {
+    // Directory may not exist — that's fine
   }
 }
 

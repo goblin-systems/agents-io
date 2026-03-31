@@ -91,4 +91,12 @@ program
     await updateCommand(name, options);
   });
 
+program
+  .command("search [query]")
+  .description("Search for agents on GitHub")
+  .action(async (query?: string) => {
+    const { searchCommand } = await import("./commands/search.js");
+    await searchCommand(query);
+  });
+
 program.parse(process.argv);

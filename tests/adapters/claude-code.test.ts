@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { readFile, mkdir, access } from "fs/promises";
+import { readFile, mkdir, access, writeFile } from "fs/promises";
 import { join } from "path";
 import claudeCodeAdapter from "../../src/adapters/claude-code.js";
 import type { AdapterContext, ParsedAgent } from "../../src/types.js";
@@ -77,7 +77,7 @@ describe("claude-code adapter", () => {
       expect(content).toContain("# Test Agent");
     });
 
-    test("creates/updates .claude/settings.json with agent entry", async () => {
+    test("does not create .claude/settings.json during install", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({
         name: "my-agent",
@@ -87,17 +87,18 @@ describe("claude-code adapter", () => {
       await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
 
       const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
+      let settingsExists = true;
 
-      expect(settings.agents).toBeDefined();
-      expect(settings.agents["my-agent"]).toBeDefined();
-      expect(settings.agents["my-agent"].description).toBe("My agent");
-      expect(settings.agents["my-agent"].prompt).toBe(
-        ".claude/agents/my-agent.md",
-      );
+      try {
+        await access(settingsFile);
+      } catch {
+        settingsExists = false;
+      }
+
+      expect(settingsExists).toBe(false);
     });
 
-    test("derives permissions from tools map", async () => {
+    test("writes enabled tools into markdown frontmatter", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({
         name: "perms-agent",
@@ -107,44 +108,38 @@ describe("claude-code adapter", () => {
 
       await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
 
-      const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
+      const agentFile = join(tmpDir, ".claude", "agents", "perms-agent.md");
+      const content = await readFile(agentFile, "utf-8");
 
-      const entry = settings.agents["perms-agent"];
-      expect(entry.permissions).toBeDefined();
-      expect(entry.permissions.allow).toContain("Read");
-      expect(entry.permissions.allow).toContain("Write");
-      expect(entry.permissions.deny).toContain("Bash");
+      expect(content).toContain("tools: 'Read, Write'");
+      expect(content).not.toContain("Bash");
     });
 
-    test("uses explicit claude-code permissions override when present", async () => {
+    test("keeps claude-code settings overrides in markdown", async () => {
       tmpDir = await makeTempDir();
-      const agent = makeAgent({
-        name: "explicit-perms",
-        description: "Agent with explicit perms",
-        tools: { read: true, write: true },
-        extra: {
+      const agent = parseAgentFile(
+        buildAgentContent({
+          name: "explicit-perms",
+          description: "Agent with explicit perms",
+          tools: { read: true, write: true },
+        }),
+        {
           "claude-code": {
-            permissions: {
-              allow: ["CustomTool"],
-              deny: ["DangerousTool"],
-            },
+            category: "specialist",
           },
         },
-      });
+      );
 
       await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
 
-      const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
+      const agentFile = join(tmpDir, ".claude", "agents", "explicit-perms.md");
+      const content = await readFile(agentFile, "utf-8");
 
-      const entry = settings.agents["explicit-perms"];
-      // Should use explicit override, not derived from tools
-      expect(entry.permissions.allow).toEqual(["CustomTool"]);
-      expect(entry.permissions.deny).toEqual(["DangerousTool"]);
+      expect(content).toContain("tools: 'Read, Write'");
+      expect(content).toContain("category: specialist");
     });
 
-    test("no permissions key when tools are empty", async () => {
+    test("does not add tools frontmatter when tools are empty", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({
         name: "no-perms",
@@ -153,16 +148,15 @@ describe("claude-code adapter", () => {
 
       await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
 
-      const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
+      const agentFile = join(tmpDir, ".claude", "agents", "no-perms.md");
+      const content = await readFile(agentFile, "utf-8");
 
-      const entry = settings.agents["no-perms"];
-      expect(entry.permissions).toBeUndefined();
+      expect(content).not.toContain("tools:");
     });
   });
 
   describe("uninstall", () => {
-    test("removes agent file and settings entry", async () => {
+    test("removes agent file without requiring settings.json", async () => {
       tmpDir = await makeTempDir();
       const agent = makeAgent({ name: "remove-me" });
       await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
@@ -177,26 +171,23 @@ describe("claude-code adapter", () => {
         fileExists = false;
       }
       expect(fileExists).toBe(false);
-
-      // Settings entry should be gone
-      const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
-      expect(settings.agents).toBeUndefined();
     });
 
-    test("preserves other agents in settings when removing one", async () => {
+    test("does not modify an existing settings.json during uninstall", async () => {
       tmpDir = await makeTempDir();
-      const agent1 = makeAgent({ name: "agent-a" });
-      const agent2 = makeAgent({ name: "agent-b" });
-      await claudeCodeAdapter.install(makeCtx(agent1, tmpDir));
-      await claudeCodeAdapter.install(makeCtx(agent2, tmpDir));
+      const claudeDir = join(tmpDir, ".claude");
+      const settingsFile = join(claudeDir, "settings.json");
+      const originalSettings = '{\n  "existing": true\n}\n';
+      const agent = makeAgent({ name: "agent-a" });
+
+      await mkdir(claudeDir, { recursive: true });
+      await writeFile(settingsFile, originalSettings, "utf-8");
+      await claudeCodeAdapter.install(makeCtx(agent, tmpDir));
 
       await claudeCodeAdapter.uninstall("agent-a", tmpDir, false);
 
-      const settingsFile = join(tmpDir, ".claude", "settings.json");
-      const settings = JSON.parse(await readFile(settingsFile, "utf-8"));
-      expect(settings.agents["agent-a"]).toBeUndefined();
-      expect(settings.agents["agent-b"]).toBeDefined();
+      const settings = await readFile(settingsFile, "utf-8");
+      expect(settings).toBe(originalSettings);
     });
   });
 });

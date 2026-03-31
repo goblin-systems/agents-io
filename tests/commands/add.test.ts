@@ -510,7 +510,7 @@ describe("add command (local sources)", () => {
     expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("mode"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("agent.json:temperature"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("`mode: primary`"))).toBe(true);
-    expect(await pathExists(join(projectDir, "AGENTS.md"))).toBe(true);
+    expect(await pathExists(join(projectDir, ".codex", "agents", "codex-warning.toml"))).toBe(true);
     expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(true);
   });
 
