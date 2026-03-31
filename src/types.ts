@@ -57,6 +57,7 @@ export interface InstalledAgent {
   sourceType: "github" | "local";
   sourceUrl: string;
   repositoryUrl?: string;
+  host?: string;
   githubRef?: GitHubRef;
   agentPath: string;
   installedAt: string;

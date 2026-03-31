@@ -8,8 +8,12 @@ import { hashContent, writeLockFile } from "../../src/core/registry.js";
 import { syncCommand } from "../../src/commands/sync.js";
 import {
   buildAgentContent,
+  captureConsoleMessage,
   cleanTempDir,
+  commitAll,
+  createCachedGitHubRepository,
   makeTempDir,
+  runGit,
 } from "../helpers.js";
 
 let tempDir = "";
@@ -17,6 +21,7 @@ const originalCwd = process.cwd();
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalExit = process.exit;
+const originalConfigDir = process.env.AGENTS_IO_CONFIG_DIR;
 const loggedMessages: string[] = [];
 const errorMessages: string[] = [];
 
@@ -24,10 +29,10 @@ beforeEach(() => {
   loggedMessages.length = 0;
   errorMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
   console.error = (...args: unknown[]) => {
-    errorMessages.push(args.map(String).join(" "));
+    errorMessages.push(captureConsoleMessage(args));
   };
 });
 
@@ -36,6 +41,7 @@ afterEach(async () => {
   console.log = originalConsoleLog;
   console.error = originalConsoleError;
   process.exit = originalExit;
+  process.env.AGENTS_IO_CONFIG_DIR = originalConfigDir;
 
   if (tempDir) {
     await cleanTempDir(tempDir);
@@ -140,6 +146,12 @@ describe("sync command", () => {
     const hash = hashContent(result.agent.raw);
 
     await opencodeAdapter.install({ agent: result.agent, projectDir, global: false });
+    await mkdir(join(projectDir, ".claude"), { recursive: true });
+    await writeFile(
+      join(projectDir, ".claude", "settings.json"),
+      JSON.stringify({ agents: { "test-agent": {} } }, null, 2) + "\n",
+      "utf-8",
+    );
     await claudeCodeAdapter.install({ agent: result.agent, projectDir, global: false });
 
     await writeLockFile(
@@ -168,18 +180,18 @@ describe("sync command", () => {
     const opencodePath = join(projectDir, "agents", "test-agent.md");
     const claudePath = join(projectDir, ".claude", "agents", "test-agent.md");
     const lockPath = join(projectDir, "agents-io-lock.json");
-    const opencodeBefore = await stat(opencodePath);
-    const claudeBefore = await stat(claudePath);
+    const opencodeBefore = await readFile(opencodePath, "utf-8");
+    const claudeBefore = await readFile(claudePath, "utf-8");
     const lockBefore = await readFile(lockPath, "utf-8");
 
     process.chdir(projectDir);
     await syncCommand();
 
-    const opencodeAfter = await stat(opencodePath);
-    const claudeAfter = await stat(claudePath);
+    const opencodeAfter = await readFile(opencodePath, "utf-8");
+    const claudeAfter = await readFile(claudePath, "utf-8");
 
-    expect(opencodeAfter.mtimeMs).toBe(opencodeBefore.mtimeMs);
-    expect(claudeAfter.mtimeMs).toBe(claudeBefore.mtimeMs);
+    expect(opencodeAfter).toBe(opencodeBefore);
+    expect(claudeAfter).toBe(claudeBefore);
     expect(await readFile(lockPath, "utf-8")).toBe(lockBefore);
     expect(
       loggedMessages.some((message) => message.includes("already aligned with the project lock file")),
@@ -291,5 +303,109 @@ describe("sync command", () => {
     expect(
       loggedMessages.some((message) => message.includes("1 platform install(s) repaired, 0 already aligned")),
     ).toBe(true);
+  });
+
+  test("sync resolves enterprise lock entries from stored repository metadata", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    await writeProjectMarker(projectDir);
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      host: "github.mycompany.com",
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "test-agent",
+          description: "Enterprise sync agent v1",
+          body: "\n# Test Agent\n\nEnterprise sync body v1.\n",
+        }),
+      },
+    });
+
+    const result = await fetchAgent("goblin-systems/agents-io-team", {
+      host: "github.mycompany.com",
+    });
+    const hash = hashContent(result.agent.raw);
+
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: "goblin-systems/agents-io-team",
+            sourceType: "github",
+            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            host: "github.mycompany.com",
+            agentPath: "",
+            installedAt: "2026-03-29T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash,
+            platformHashes: { opencode: hash },
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Enterprise sync agent v2",
+        body: "\n# Test Agent\n\nEnterprise sync body v2.\n",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Update enterprise sync agent");
+    const updatedCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
+    await runGit(["push", "origin", "main"], repository.workingRepoDir);
+
+    const updatedResult = await fetchAgent("goblin-systems/agents-io-team", {
+      host: "github.mycompany.com",
+    });
+    const updatedHash = hashContent(updatedResult.agent.raw);
+
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: "goblin-systems/agents-io-team",
+            sourceType: "github",
+            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            host: "github.mycompany.com",
+            agentPath: "",
+            installedAt: "2026-03-29T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash: updatedHash,
+            platformHashes: { opencode: updatedHash },
+            githubRef: {
+              type: "commit",
+              value: updatedCommit,
+              resolvedCommit: updatedCommit,
+            },
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    process.chdir(projectDir);
+    await syncCommand();
+
+    expect(await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8")).toContain(
+      "Enterprise sync agent v2",
+    );
+    expect(loggedMessages.some((message) => message.includes("Sync complete"))).toBe(true);
   });
 });

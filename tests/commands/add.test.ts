@@ -4,6 +4,7 @@ import { join, resolve } from "path";
 import { readLockFile } from "../../src/core/registry.js";
 import {
   buildAgentContent,
+  captureConsoleMessage,
   cleanTempDir,
   commitAll,
   createCachedGitHubRepository,
@@ -54,10 +55,10 @@ beforeEach(() => {
   loggedMessages.length = 0;
   errorMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
   console.error = (...args: unknown[]) => {
-    errorMessages.push(args.map(String).join(" "));
+    errorMessages.push(captureConsoleMessage(args));
   };
   process.exit = ((code?: number) => {
     throw new Error(`EXIT:${code ?? 0}`);
@@ -318,6 +319,48 @@ describe("add command (local sources)", () => {
     expect(entry.sourceType).toBe("github");
     expect(entry.sourceUrl).toBe("https://github.com/goblin-systems/agents-io-team");
     expect(entry.repositoryUrl).toBe("git@github.com:goblin-systems/agents-io-team.git");
+    expect(entry.host).toBe("github.com");
+  });
+
+  test("installs from GitHub Enterprise shorthand sources using --host", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await setupProject(projectDir);
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      host: "github.mycompany.com",
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "team-agent",
+          description: "Enterprise team agent from cached repository",
+        }),
+      },
+    });
+
+    process.chdir(projectDir);
+
+    await addCommand("goblin-systems/agents-io-team", {
+      platform: "opencode",
+      global: false,
+      host: "github.mycompany.com",
+    });
+
+    const installedFile = await readFile(join(projectDir, "agents", "team-agent.md"), "utf-8");
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["team-agent"];
+
+    expect(installedFile).toContain("Enterprise team agent from cached repository");
+    expect(entry.source).toBe("goblin-systems/agents-io-team");
+    expect(entry.sourceType).toBe("github");
+    expect(entry.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
+    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team.git");
+    expect(entry.host).toBe("github.mycompany.com");
   });
 
   test("persists pinned GitHub branch metadata in the lock file", async () => {

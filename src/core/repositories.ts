@@ -7,17 +7,20 @@ import { getRepositoryCacheDir } from "../utils/paths.js";
 import type { AgentSettings, DiscoveredAgent, GitHubRef } from "../types.js";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_GITHUB_HOST = "github.com";
 const SHORTHAND_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
-const SSH_RE = /^git@github\.com:([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
-const SSH_URL_RE = /^ssh:\/\/git@github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/;
+const SSH_RE = /^git@([^/:]+):([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
+const SSH_URL_RE = /^ssh:\/\/git@([^/]+)\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/;
 const CONVERTIBLE_AGENT_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
 
 type ConvertibleRepositoryAgentFile = (typeof CONVERTIBLE_AGENT_FILES)[number];
 
 export interface NormalizedGitHubRepositorySource {
+  host: string;
   owner: string;
   repo: string;
   canonical: string;
+  sourceUrl: string;
   httpsUrl: string;
   cloneUrl: string;
 }
@@ -32,7 +35,7 @@ export interface ConvertibleRepositoryAgent {
 export class InvalidRepositorySourceError extends Error {
   constructor(source: string) {
     super(
-      "Invalid GitHub source format. Expected owner/repo, https://github.com/owner/repo(.git), git@github.com:owner/repo.git, or ssh://git@github.com/owner/repo.git",
+      "Invalid GitHub source format. Expected owner/repo, https://<host>/owner/repo(.git), git@<host>:owner/repo.git, or ssh://git@<host>/owner/repo.git",
     );
     this.name = "InvalidRepositorySourceError";
     this.source = source;
@@ -72,7 +75,58 @@ async function runGit(
 }
 
 function buildCachePath(source: NormalizedGitHubRepositorySource): string {
-  return join(getRepositoryCacheDir(), source.owner, source.repo);
+  return join(
+    getRepositoryCacheDir(),
+    encodeURIComponent(source.host),
+    encodeURIComponent(source.owner),
+    encodeURIComponent(source.repo),
+  );
+}
+
+function normalizeGitHubHost(host?: string): string | null {
+  if (!host) {
+    return DEFAULT_GITHUB_HOST;
+  }
+
+  const trimmedHost = host.trim();
+  if (!trimmedHost) {
+    return null;
+  }
+
+  try {
+    const url = trimmedHost.includes("://")
+      ? new URL(trimmedHost)
+      : new URL(`https://${trimmedHost}`);
+
+    if (url.pathname !== "/" && url.pathname !== "") {
+      return null;
+    }
+
+    return url.host.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function buildNormalizedSource(
+  host: string,
+  owner: string,
+  repo: string,
+  cloneUrl: string,
+): NormalizedGitHubRepositorySource {
+  const canonical = `${owner}/${repo}`;
+  const sourceUrl = `https://${host}/${owner}/${repo}`;
+  const httpsUrl = `${sourceUrl}.git`;
+
+  return {
+    host,
+    owner,
+    repo,
+    canonical,
+    sourceUrl,
+    httpsUrl,
+    cloneUrl,
+  };
 }
 
 function sanitizeRepositoryPath(agentPath?: string): string {
@@ -213,47 +267,45 @@ async function listDirectory(cachePath: string, directoryPath?: string): Promise
 
 export function normalizeGitHubSource(
   source: string,
+  options?: { host?: string },
 ): NormalizedGitHubRepositorySource | null {
   const trimmedSource = source.trim();
 
   if (SHORTHAND_RE.test(trimmedSource)) {
+    const host = normalizeGitHubHost(options?.host);
+    if (!host) {
+      return null;
+    }
+
     const [owner, repo] = trimmedSource.split("/");
-    return {
-      owner,
-      repo,
-      canonical: `${owner}/${repo}`,
-      httpsUrl: `https://github.com/${owner}/${repo}.git`,
-      cloneUrl: `https://github.com/${owner}/${repo}.git`,
-    };
+    return buildNormalizedSource(host, owner, repo, `https://${host}/${owner}/${repo}.git`);
   }
 
   const sshMatch = trimmedSource.match(SSH_RE);
   if (sshMatch) {
-    const [, owner, repo] = sshMatch;
-    return {
+    const [, host, owner, repo] = sshMatch;
+    return buildNormalizedSource(
+      host.toLowerCase(),
       owner,
       repo,
-      canonical: `${owner}/${repo}`,
-      httpsUrl: `https://github.com/${owner}/${repo}.git`,
-      cloneUrl: `git@github.com:${owner}/${repo}.git`,
-    };
+      `git@${host}:${owner}/${repo}.git`,
+    );
   }
 
   const sshUrlMatch = trimmedSource.match(SSH_URL_RE);
   if (sshUrlMatch) {
-    const [, owner, repo] = sshUrlMatch;
-    return {
+    const [, host, owner, repo] = sshUrlMatch;
+    return buildNormalizedSource(
+      host.toLowerCase(),
       owner,
       repo,
-      canonical: `${owner}/${repo}`,
-      httpsUrl: `https://github.com/${owner}/${repo}.git`,
-      cloneUrl: `ssh://git@github.com/${owner}/${repo}.git`,
-    };
+      `ssh://git@${host}/${owner}/${repo}.git`,
+    );
   }
 
   try {
     const url = new URL(trimmedSource);
-    if (url.protocol !== "https:" || url.hostname !== "github.com") {
+    if (url.protocol !== "https:") {
       return null;
     }
 
@@ -269,13 +321,12 @@ export function normalizeGitHubSource(
       return null;
     }
 
-    return {
+    return buildNormalizedSource(
+      url.host.toLowerCase(),
       owner,
       repo,
-      canonical: `${owner}/${repo}`,
-      httpsUrl: `https://github.com/${owner}/${repo}.git`,
-      cloneUrl: `https://github.com/${owner}/${repo}.git`,
-    };
+      `https://${url.host.toLowerCase()}/${owner}/${repo}.git`,
+    );
   } catch {
     return null;
   }
@@ -310,7 +361,7 @@ export async function fetchRepositoryAgent(
   const content = await readCachedFile(cachePath, markdownPath);
 
   if (!content) {
-    throw new RepositoryAgentNotFoundError(source.canonical, markdownPath);
+    throw new RepositoryAgentNotFoundError(source.sourceUrl, markdownPath);
   }
 
   const jsonContent = await readCachedFile(cachePath, agentJsonPath(markdownPath));

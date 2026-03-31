@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { log } from "../../src/utils/logger.js";
+import { captureConsoleMessage } from "../helpers.js";
 
 const originalConsoleLog = console.log;
 const loggedMessages: string[] = [];
@@ -7,7 +8,7 @@ const loggedMessages: string[] = [];
 beforeEach(() => {
   loggedMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
 });
 

@@ -8,6 +8,7 @@ import { hashContent, readLockFile, writeLockFile } from "../../src/core/registr
 import type { Platform } from "../../src/types.js";
 import {
   buildAgentContent,
+  captureConsoleMessage,
   cleanTempDir,
   commitAll,
   createCachedGitHubRepository,
@@ -57,10 +58,10 @@ beforeEach(() => {
   loggedMessages.length = 0;
   errorMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
   console.error = (...args: unknown[]) => {
-    errorMessages.push(args.map(String).join(" "));
+    errorMessages.push(captureConsoleMessage(args));
   };
 });
 
@@ -120,6 +121,7 @@ function buildEntry(source: string, platforms: Platform[] = ["opencode"]): {
   source: string;
   sourceType: "local";
   sourceUrl: string;
+  host?: string;
   agentPath: string;
   installedAt: string;
   platforms: Platform[];
@@ -750,6 +752,87 @@ describe("update command", () => {
     expect(installedFile).toContain("Updated repository description");
     expect(installedFile).toContain("Updated repository body.");
     expect(refreshedCacheFile).toContain("Updated repository description");
+  });
+
+  test("uses stored enterprise repository metadata during update", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    await writeProjectMarker(projectDir);
+
+    const repository = await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      host: "github.mycompany.com",
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "test-agent",
+          description: "Initial enterprise description",
+          body: "\n# Test Agent\n\nInitial enterprise body.\n",
+        }),
+      },
+    });
+
+    const initialResult = await fetchAgent("goblin-systems/agents-io-team", {
+      host: "github.mycompany.com",
+    });
+    await opencodeAdapter.install({
+      agent: initialResult.agent,
+      projectDir,
+      global: false,
+    });
+
+    const initialHash = hashContent(initialResult.agent.raw);
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: "goblin-systems/agents-io-team",
+            sourceType: "github",
+            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            host: "github.mycompany.com",
+            agentPath: "",
+            installedAt: "2026-03-28T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash: initialHash,
+            platformHashes: { opencode: initialHash },
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await writeFile(
+      join(repository.workingRepoDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Updated enterprise description",
+        body: "\n# Test Agent\n\nUpdated enterprise body.\n",
+      }),
+      "utf-8",
+    );
+    await commitAll(repository.workingRepoDir, "Update enterprise agent");
+    await runGit(["push", "origin", "main"], repository.workingRepoDir);
+
+    process.chdir(projectDir);
+    await updateCommand("test-agent");
+
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["test-agent"];
+    const installedFile = await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8");
+
+    expect(entry.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
+    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team.git");
+    expect(entry.host).toBe("github.mycompany.com");
+    expect(installedFile).toContain("Updated enterprise description");
+    expect(installedFile).toContain("Updated enterprise body.");
   });
 
   test("rejects mutually exclusive scope flags", async () => {

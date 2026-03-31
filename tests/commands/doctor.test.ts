@@ -6,7 +6,7 @@ import opencodeAdapter from "../../src/adapters/opencode.js";
 import { hashContent, writeLockFile } from "../../src/core/registry.js";
 import { parseAgentFile } from "../../src/core/parse.js";
 import type { InstalledAgent, Platform } from "../../src/types.js";
-import { buildAgentContent, cleanTempDir, makeTempDir } from "../helpers.js";
+import { buildAgentContent, captureConsoleMessage, cleanTempDir, makeTempDir } from "../helpers.js";
 
 let tempDir = "";
 let homeDir = "";
@@ -27,10 +27,10 @@ beforeEach(() => {
   loggedMessages.length = 0;
   errorMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
   console.error = (...args: unknown[]) => {
-    errorMessages.push(args.map(String).join(" "));
+    errorMessages.push(captureConsoleMessage(args));
   };
 });
 
@@ -119,7 +119,11 @@ describe("doctor command", () => {
     const { projectDir, agent } = await setupProject();
 
     await mkdir(join(projectDir, ".claude"), { recursive: true });
-    await writeFile(join(projectDir, ".claude", "settings.json"), "{}\n", "utf-8");
+    await writeFile(
+      join(projectDir, ".claude", "settings.json"),
+      JSON.stringify({ agents: { "test-agent": {} } }, null, 2) + "\n",
+      "utf-8",
+    );
     await opencodeAdapter.install({ agent, projectDir, global: false });
     await claudeCodeAdapter.install({ agent, projectDir, global: false });
 

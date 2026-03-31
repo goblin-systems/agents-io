@@ -106,8 +106,9 @@ async function discoverLocal(source: string): Promise<DiscoveredAgent[]> {
 async function discoverGitHub(
   source: string,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
+  host?: string,
 ): Promise<DiscoveredAgent[]> {
-  const normalizedSource = normalizeGitHubSource(source);
+  const normalizedSource = normalizeGitHubSource(source, { host });
 
   if (!normalizedSource) {
     return [];
@@ -123,9 +124,10 @@ async function discoverGitHub(
 export async function discoverAgents(
   source: string,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
+  host?: string,
 ): Promise<DiscoveredAgent[]> {
   if (isLocalPath(source)) {
     return discoverLocal(source);
   }
-  return discoverGitHub(source, githubRef);
+  return discoverGitHub(source, githubRef, host);
 }

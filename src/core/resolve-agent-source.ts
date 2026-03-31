@@ -34,9 +34,10 @@ function isDiscoverableRootMiss(error: unknown): error is DiscoverableRootMissEr
 export async function resolveAgentSource(
   source: string,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
+  host?: string,
 ): Promise<ResolvedAgentSource> {
   try {
-    const result = await fetchAgent(source, { githubRef });
+    const result = await fetchAgent(source, { githubRef, host });
     return {
       kind: "root",
       result,
@@ -46,11 +47,11 @@ export async function resolveAgentSource(
       throw error;
     }
 
-    const discovered = await discoverAgents(source, githubRef);
+    const discovered = await discoverAgents(source, githubRef, host);
 
     if (discovered.length === 0) {
       if (error instanceof RepositoryAgentNotFoundError) {
-        const conversion = await convertGitHubAgent(source, { githubRef });
+        const conversion = await convertGitHubAgent(source, { githubRef, host });
 
         if (conversion) {
           return {

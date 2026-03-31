@@ -35,6 +35,7 @@ function makeEntry(overrides?: Partial<InstalledAgent>): InstalledAgent {
     hash: overrides?.hash ?? "abc123def456",
     platformHashes: overrides?.platformHashes,
     repositoryUrl: overrides?.repositoryUrl,
+    host: overrides?.host,
   };
 }
 

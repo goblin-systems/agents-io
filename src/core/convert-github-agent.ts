@@ -45,9 +45,10 @@ export async function convertGitHubAgent(
   options?: {
     path?: string;
     githubRef?: Omit<GitHubRef, "resolvedCommit">;
+    host?: string;
   },
 ): Promise<ConvertibleGitHubAgent | null> {
-  const normalizedSource = normalizeGitHubSource(source);
+  const normalizedSource = normalizeGitHubSource(source, { host: options?.host });
 
   if (!normalizedSource) {
     return null;
@@ -82,6 +83,7 @@ export async function convertGitHubAgent(
       agent: parseAgentFile(raw),
       sourceType: "github",
       resolvedSource: normalizedSource.canonical,
+      sourceUrl: normalizedSource.sourceUrl,
       repositoryUrl: normalizedSource.cloneUrl,
       resolvedCommit: candidate.resolvedCommit,
     },

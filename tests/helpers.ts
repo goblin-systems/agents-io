@@ -6,6 +6,11 @@ import { tmpdir } from "os";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
+const ANSI_ESCAPE_PATTERN = /\u001B\[[0-?]*[ -/]*[@-~]/g;
+
+export function captureConsoleMessage(args: unknown[]): string {
+  return args.map(String).join(" ").replaceAll(ANSI_ESCAPE_PATTERN, "");
+}
 
 export function buildAgentContent(overrides?: {
   name?: string;
@@ -69,11 +74,18 @@ export async function createBareRemoteFromWorkingRepo(
 
 export async function seedRepositoryCache(
   configDir: string,
+  host: string,
   owner: string,
   repo: string,
   remoteUrl: string,
 ): Promise<string> {
-  const cacheDir = join(configDir, "repositories", owner, repo);
+  const cacheDir = join(
+    configDir,
+    "repositories",
+    encodeURIComponent(host),
+    encodeURIComponent(owner),
+    encodeURIComponent(repo),
+  );
   await mkdir(dirname(cacheDir), { recursive: true });
   await runGit(["clone", remoteUrl, cacheDir]);
   return cacheDir;
@@ -82,6 +94,7 @@ export async function seedRepositoryCache(
 export async function createCachedGitHubRepository(options: {
   rootDir: string;
   configDir: string;
+  host?: string;
   owner: string;
   repo: string;
   files: Record<string, string>;
@@ -101,6 +114,7 @@ export async function createCachedGitHubRepository(options: {
   await createBareRemoteFromWorkingRepo(workingRepoDir, bareRemoteDir);
   const cacheDir = await seedRepositoryCache(
     options.configDir,
+    options.host ?? "github.com",
     options.owner,
     options.repo,
     bareRemoteDir,

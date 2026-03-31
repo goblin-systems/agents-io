@@ -37,7 +37,7 @@ export function areAllInstalledPlatformsCurrent(
 export function getFetchSource(entry: InstalledAgent): string {
   return entry.sourceType === "local"
     ? entry.sourceUrl
-    : (entry.repositoryUrl ?? entry.source);
+    : (entry.repositoryUrl ?? entry.sourceUrl ?? entry.source);
 }
 
 function getFetchRef(entry: InstalledAgent, mode: LockEntryFetchMode): Omit<GitHubRef, "resolvedCommit"> | undefined {

@@ -6,7 +6,7 @@ import opencodeAdapter from "../../src/adapters/opencode.js";
 import { getAgent, writeLockFile } from "../../src/core/registry.js";
 import { parseAgentFile } from "../../src/core/parse.js";
 import { getGlobalDir } from "../../src/utils/paths.js";
-import { buildAgentContent, cleanTempDir, makeTempDir } from "../helpers.js";
+import { buildAgentContent, captureConsoleMessage, cleanTempDir, makeTempDir } from "../helpers.js";
 
 const CANCEL_SIGNAL = Symbol("cancel");
 
@@ -52,10 +52,10 @@ beforeEach(() => {
   cancelMessages = [];
   loggedMessages.length = 0;
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
   console.error = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
 });
 

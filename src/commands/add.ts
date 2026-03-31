@@ -102,6 +102,7 @@ async function installAgent(
   sourceType: "github" | "local",
   agentPath: string,
   repositoryUrl?: string,
+  sourceUrl?: string,
   githubRef?: GitHubRef,
 ): Promise<void> {
   const platformNames: Platform[] = [];
@@ -121,11 +122,9 @@ async function installAgent(
     {
       source: resolvedSource,
       sourceType,
-      sourceUrl:
-        sourceType === "github"
-          ? `https://github.com/${resolvedSource}`
-          : resolvedSource,
+      sourceUrl: sourceType === "github" ? (sourceUrl ?? `https://github.com/${resolvedSource}`) : resolvedSource,
       repositoryUrl,
+      host: sourceType === "github" ? new URL(sourceUrl ?? `https://github.com/${resolvedSource}`).host : undefined,
       githubRef,
       agentPath,
       installedAt: new Date().toISOString(),
@@ -196,13 +195,14 @@ async function prepareSelectedAgents(
   selectedPaths: string[],
   githubRef: Omit<GitHubRef, "resolvedCommit"> | undefined,
   targets: Adapter[],
+  host?: string,
 ): Promise<PreparedInstall[]> {
   const preparedAgents: PreparedInstall[] = [];
 
   for (const agentPath of selectedPaths) {
     log.fetch(`Fetching agent from ${source}`);
     log.detail(`agent path: ${agentPath}`);
-    const result = await fetchAgent(source, { path: agentPath, githubRef });
+    const result = await fetchAgent(source, { path: agentPath, githubRef, host });
     reportCompatibilityIssues(result.agent, targets);
     preparedAgents.push({ result, agentPath });
   }
@@ -243,6 +243,7 @@ export interface AddOptions {
   branch?: string;
   tag?: string;
   commit?: string;
+  host?: string;
 }
 
 function getRequestedGitHubRef(options: AddOptions): Omit<GitHubRef, "resolvedCommit"> | undefined {
@@ -290,7 +291,7 @@ export async function addCommand(
 
     // 2. Try to fetch a single agent at root
     log.fetch(`Fetching agent from ${source}`);
-    const resolvedSource = await resolveAgentSource(source, githubRef);
+    const resolvedSource = await resolveAgentSource(source, githubRef, options.host);
 
     // 3. If root fetch succeeded, install normally
     if (resolvedSource.kind === "root") {
@@ -369,6 +370,7 @@ export async function addCommand(
       selectedPaths,
       githubRef,
       targets,
+      options.host,
     );
 
     // 7. Install each selected agent
@@ -399,6 +401,7 @@ export async function addCommand(
         result.sourceType,
         agentPath,
         result.repositoryUrl,
+        result.sourceUrl,
         resolveStoredGitHubRef(githubRef, result.resolvedCommit),
       );
     }
@@ -442,6 +445,7 @@ async function addSingleAgent(
           result: await fetchAgent(source, {
             path: options.path,
             githubRef: requestedGitHubRef,
+            host: options.host,
           }),
           conversion: undefined,
         };
@@ -453,6 +457,7 @@ async function addSingleAgent(
         const candidate = await convertGitHubAgent(source, {
           path: options.path,
           githubRef: requestedGitHubRef,
+          host: options.host,
         });
 
         if (!candidate) {
@@ -522,6 +527,7 @@ async function addSingleAgent(
     sourceType,
     options.path ?? "",
     result.repositoryUrl,
+    result.sourceUrl,
     resolveStoredGitHubRef(requestedGitHubRef, result.resolvedCommit),
   );
 

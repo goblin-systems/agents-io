@@ -8,6 +8,7 @@ import { log } from "../utils/logger.js";
 
 export interface ValidateOptions {
   path?: string;
+  host?: string;
 }
 
 function formatValidationError(error: unknown): string {
@@ -20,7 +21,7 @@ function formatValidationError(error: unknown): string {
   }
 
   if (error instanceof InvalidRepositorySourceError) {
-    return `${error.message}. Use owner/repo, a supported GitHub URL, or a local filesystem path.`;
+    return `${error.message}. Use owner/repo, a supported GitHub or GitHub Enterprise URL, or a local filesystem path.`;
   }
 
   if (error instanceof Error) {
@@ -38,7 +39,7 @@ export async function validateCommand(
     log.inspect(`Validating agent from ${source}`);
 
     if (options.path) {
-      const result = await fetchAgent(source, { path: options.path });
+      const result = await fetchAgent(source, { path: options.path, host: options.host });
       const name = result.agent.frontmatter.name;
 
       log.spacer();
@@ -48,7 +49,7 @@ export async function validateCommand(
       return;
     }
 
-    const resolvedSource = await resolveAgentSource(source);
+    const resolvedSource = await resolveAgentSource(source, undefined, options.host);
 
     if (resolvedSource.kind === "root") {
       const name = resolvedSource.result.agent.frontmatter.name;
@@ -67,7 +68,7 @@ export async function validateCommand(
     log.spacer();
 
     for (const discoveredAgent of resolvedSource.agents) {
-      const result = await fetchAgent(source, { path: discoveredAgent.path });
+      const result = await fetchAgent(source, { path: discoveredAgent.path, host: options.host });
       log.success(`Agent '${result.agent.frontmatter.name}' is valid`);
       log.detail(`resolved source: ${result.resolvedSource}`);
       log.detail(`agent path: ${discoveredAgent.path}`);

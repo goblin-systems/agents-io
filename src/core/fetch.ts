@@ -13,6 +13,8 @@ export interface FetchOptions {
   path?: string;
   /** Optional pinned GitHub ref. Ignored for local sources. */
   githubRef?: Omit<GitHubRef, "resolvedCommit">;
+  /** Optional enterprise host for owner/repo shorthand. */
+  host?: string;
 }
 
 export interface FetchResult {
@@ -20,6 +22,7 @@ export interface FetchResult {
   sourceType: "github" | "local";
   /** "owner/repo" for github, absolute path for local. */
   resolvedSource: string;
+  sourceUrl?: string;
   repositoryUrl?: string;
   resolvedCommit?: string;
 }
@@ -108,14 +111,14 @@ async function fetchGitHubAgent(
   source: string,
   options?: FetchOptions,
 ): Promise<FetchResult> {
-  const normalizedSource = normalizeGitHubSource(source);
+  const normalizedSourceWithHost = normalizeGitHubSource(source, { host: options?.host });
 
-  if (!normalizedSource) {
+  if (!normalizedSourceWithHost) {
     throw new InvalidRepositorySourceError(source);
   }
 
   const repositoryResult = await fetchRepositoryAgent(
-    normalizedSource,
+    normalizedSourceWithHost,
     options?.path,
     options?.githubRef,
   );
@@ -123,8 +126,9 @@ async function fetchGitHubAgent(
   return {
     agent: parseAgentFile(repositoryResult.content, repositoryResult.settings as AgentSettings),
     sourceType: "github",
-    resolvedSource: normalizedSource.canonical,
-    repositoryUrl: normalizedSource.cloneUrl,
+    resolvedSource: normalizedSourceWithHost.canonical,
+    sourceUrl: normalizedSourceWithHost.sourceUrl,
+    repositoryUrl: normalizedSourceWithHost.cloneUrl,
     resolvedCommit: repositoryResult.resolvedCommit,
   };
 }

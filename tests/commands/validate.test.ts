@@ -2,13 +2,20 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { access, mkdir, readdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { validateCommand } from "../../src/commands/validate.js";
-import { buildAgentContent, cleanTempDir, makeTempDir } from "../helpers.js";
+import {
+  buildAgentContent,
+  captureConsoleMessage,
+  cleanTempDir,
+  createCachedGitHubRepository,
+  makeTempDir,
+} from "../helpers.js";
 
 let tempDir = "";
 const originalCwd = process.cwd();
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalExit = process.exit;
+const originalConfigDir = process.env.AGENTS_IO_CONFIG_DIR;
 const loggedMessages: string[] = [];
 const errorMessages: string[] = [];
 
@@ -17,6 +24,7 @@ afterEach(async () => {
   console.log = originalConsoleLog;
   console.error = originalConsoleError;
   process.exit = originalExit;
+  process.env.AGENTS_IO_CONFIG_DIR = originalConfigDir;
   loggedMessages.length = 0;
   errorMessages.length = 0;
 
@@ -28,11 +36,11 @@ afterEach(async () => {
 
 function captureOutput(): void {
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
 
   console.error = (...args: unknown[]) => {
-    errorMessages.push(args.map(String).join(" "));
+    errorMessages.push(captureConsoleMessage(args));
   };
 }
 
@@ -163,5 +171,37 @@ describe("validate command", () => {
     expect(errorMessages.some((message) => message.includes("Agent file has no body content"))).toBe(true);
     await expect(access(join(projectDir, "agents-io-lock.json"))).rejects.toBeDefined();
     await expect(access(join(projectDir, "agents"))).rejects.toBeDefined();
+  });
+
+  test("validates enterprise shorthand sources with --host without installing anything", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    const projectDir = join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(projectDir, "package.json"), '{"name":"test-project"}\n', "utf-8");
+
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "repo-root"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      host: "github.mycompany.com",
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agent.md": buildAgentContent({
+          name: "enterprise-agent",
+          description: "Enterprise review agent",
+        }),
+      },
+    });
+
+    process.chdir(projectDir);
+    captureOutput();
+
+    await validateCommand("goblin-systems/agents-io-team", { host: "github.mycompany.com" });
+
+    expect(loggedMessages.some((message) => message.includes("Agent 'enterprise-agent' is valid"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("resolved source: goblin-systems/agents-io-team"))).toBe(true);
+    await expect(access(join(projectDir, "agents-io-lock.json"))).rejects.toBeDefined();
   });
 });

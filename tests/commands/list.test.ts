@@ -4,7 +4,7 @@ import { join } from "path";
 import { listCommand } from "../../src/commands/list.js";
 import { writeLockFile } from "../../src/core/registry.js";
 import type { InstalledAgent, LockFile } from "../../src/types.js";
-import { cleanTempDir, makeTempDir } from "../helpers.js";
+import { captureConsoleMessage, cleanTempDir, makeTempDir } from "../helpers.js";
 
 let tempDir = "";
 const originalCwd = process.cwd();
@@ -45,7 +45,7 @@ afterEach(async () => {
 
 function captureLogs(): void {
   console.log = (...args: unknown[]) => {
-    loggedMessages.push(args.map(String).join(" "));
+    loggedMessages.push(captureConsoleMessage(args));
   };
 }
 
@@ -60,6 +60,7 @@ function buildEntry(overrides: Partial<InstalledAgent> = {}): InstalledAgent {
     hash: overrides.hash ?? "abc123def456",
     platformHashes: overrides.platformHashes,
     repositoryUrl: overrides.repositoryUrl,
+    host: overrides.host,
     githubRef: overrides.githubRef,
   };
 }
@@ -186,5 +187,29 @@ describe("list command", () => {
 
     expect(loggedMessages.some((message) => message.includes("branch:release @ abcdef1"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("github, unpinned"))).toBe(true);
+  });
+
+  test("shows enterprise GitHub sources using canonical owner/repo labels", async () => {
+    const { projectDir } = await setupProject();
+
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          enterprise: buildEntry({
+            source: "owner/enterprise-repo",
+            sourceUrl: "https://github.mycompany.com/owner/enterprise-repo",
+            repositoryUrl: "https://github.mycompany.com/owner/enterprise-repo.git",
+            host: "github.mycompany.com",
+          }),
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await listCommand();
+
+    expect(loggedMessages.some((message) => message.includes("enterprise - owner/enterprise-repo (github, unpinned)"))).toBe(true);
   });
 });

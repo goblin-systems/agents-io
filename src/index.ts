@@ -15,6 +15,7 @@ program
   .option("--global", "install globally")
   .option("--dry-run", "preview add without writing changes")
   .option("--path <path>", "subfolder in repo")
+  .option("--host <host>", "GitHub Enterprise host for owner/repo shorthand")
   .option("--branch <name>", "pin a GitHub install to a branch")
   .option("--tag <name>", "pin a GitHub install to a tag")
   .option("--commit <sha>", "pin a GitHub install to a commit")
@@ -36,6 +37,7 @@ program
   .command("validate <source>")
   .description("Validate an agent source without installing it")
   .option("--path <path>", "subfolder in repo")
+  .option("--host <host>", "GitHub Enterprise host for owner/repo shorthand")
   .action(async (source: string, options: Record<string, unknown>) => {
     const { validateCommand } = await import("./commands/validate.js");
     await validateCommand(source, options);

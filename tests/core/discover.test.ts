@@ -281,4 +281,33 @@ describe("discoverAgents (edge cases)", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("discovers agents from a cached GitHub Enterprise repository via --host shorthand resolution", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    await createCachedGitHubRepository({
+      rootDir: tempDir,
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      host: "github.mycompany.com",
+      owner: "goblin-systems",
+      repo: "agents-io-team",
+      files: {
+        "agents/reviewer/agent.md": buildAgentContent({
+          name: "reviewer-agent",
+          description: "Enterprise code review helper",
+        }),
+      },
+    });
+
+    const agents = await discoverAgents(
+      "goblin-systems/agents-io-team",
+      undefined,
+      "github.mycompany.com",
+    );
+
+    expect(agents).toHaveLength(1);
+    expect(agents[0]?.name).toBe("reviewer-agent");
+    expect(agents[0]?.path).toBe("agents/reviewer");
+  });
 });
