@@ -105,7 +105,7 @@ Focus on the task, explain key decisions briefly, and keep your output actionabl
 ## Publish
 
 \`\`\`bash
-npx agnts add yourname/${agentName}
+npx agents-io@latest add yourname/${agentName}
 \`\`\`
 
 ## What it does

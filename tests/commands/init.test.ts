@@ -29,7 +29,7 @@ describe("init command", () => {
     expect(agentMd).toContain("name: review-agent");
     expect(agentMd).toContain("description: 'TODO: Describe what this agent does'");
     expect(agentMd).not.toContain("mode:");
-    expect(readme).toContain("npx agnts add yourname/review-agent");
+    expect(readme).toContain("npx agents-io@latest add yourname/review-agent");
     expect(readme).toContain("Optional: add `agent.json` later");
     await expect(access(join(tempDir, "review-agent", "agent.json"))).rejects.toBeDefined();
   });

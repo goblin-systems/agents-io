@@ -28,7 +28,7 @@ export function buildAgentContent(overrides?: {
 }
 
 export async function makeTempDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "agnts-test-"));
+  return mkdtemp(join(tmpdir(), "agents-io-test-"));
 }
 
 export async function cleanTempDir(dir: string): Promise<void> {
