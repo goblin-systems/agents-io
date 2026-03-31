@@ -4,7 +4,7 @@
   "description": "Install coding agents for OpenCode, Claude Code, Codex, and Kiro",
   "type": "module",
   "bin": {
-    "agents-io": "./dist/index.js"
+    "agents-io": "dist/index.js"
   },
   "scripts": {
     "build": "bun run build.ts",
@@ -35,6 +35,7 @@
   "license": "MIT",
   "files": [
     "dist",
+    "README.md",
     "LICENSE"
   ],
   "author": "Sergej Popov",
