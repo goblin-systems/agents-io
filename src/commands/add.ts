@@ -1,6 +1,12 @@
 import { select, multiselect, isCancel, cancel } from "@clack/prompts";
 import { convertGitHubAgent, type ConvertibleGitHubAgent } from "../core/convert-github-agent.js";
+import {
+  applyAgentModeOverride,
+  getEffectiveAgentMode,
+  validateAgentMode,
+} from "../core/agent-mode.js";
 import { fetchAgent } from "../core/fetch.js";
+import { getRequestedGitHubRef } from "../core/github-ref.js";
 import { getPlatformCompatibilityIssues } from "../core/platform-compatibility.js";
 import { hashContent, addAgent } from "../core/registry.js";
 import { resolveAgentSource } from "../core/resolve-agent-source.js";
@@ -11,7 +17,7 @@ import opencodeAdapter from "../adapters/opencode.js";
 import claudeCodeAdapter from "../adapters/claude-code.js";
 import codexAdapter from "../adapters/codex.js";
 import kiroAdapter from "../adapters/kiro.js";
-import type { Adapter, GitHubRef, ParsedAgent, Platform } from "../types.js";
+import type { Adapter, AgentMode, GitHubRef, ParsedAgent, Platform } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Adapter registry
@@ -104,8 +110,11 @@ async function installAgent(
   repositoryUrl?: string,
   sourceUrl?: string,
   githubRef?: GitHubRef,
+  modeOverride?: AgentMode,
 ): Promise<void> {
   const platformNames: Platform[] = [];
+
+  log.detail(`mode: ${getEffectiveAgentMode(agent, modeOverride)}`);
 
   for (const adapter of targets) {
     log.detail(`${agent.frontmatter.name} -> ${adapter.name}`);
@@ -130,12 +139,13 @@ async function installAgent(
       installedAt: new Date().toISOString(),
       platforms: platformNames,
       hash: hashContent(agent.raw),
-      platformHashes: Object.fromEntries(
-        platformNames.map((platform) => [platform, hashContent(agent.raw)]),
-      ) as Partial<Record<Platform, string>>,
-    },
-    isGlobal,
-    projectRoot,
+        platformHashes: Object.fromEntries(
+          platformNames.map((platform) => [platform, hashContent(agent.raw)]),
+        ) as Partial<Record<Platform, string>>,
+        modeOverride,
+      },
+      isGlobal,
+      projectRoot,
   );
 }
 
@@ -145,11 +155,13 @@ function previewAgentInstall(
   isGlobal: boolean,
   resolvedSource: string,
   agentPath: string,
+  modeOverride?: AgentMode,
 ): void {
   log.install(`Previewing ${agent.frontmatter.name}`);
   log.detail(`resolved source: ${resolvedSource}`);
   log.detail(`scope: ${isGlobal ? "global" : "project"}`);
   log.detail(`platforms: ${targets.map((target) => target.name).join(", ")}`);
+  log.detail(`mode: ${getEffectiveAgentMode(agent, modeOverride)}`);
 
   if (agentPath) {
     log.detail(`agent path: ${agentPath}`);
@@ -195,6 +207,7 @@ async function prepareSelectedAgents(
   selectedPaths: string[],
   githubRef: Omit<GitHubRef, "resolvedCommit"> | undefined,
   targets: Adapter[],
+  modeOverride: AgentMode | undefined,
   host?: string,
 ): Promise<PreparedInstall[]> {
   const preparedAgents: PreparedInstall[] = [];
@@ -203,7 +216,7 @@ async function prepareSelectedAgents(
     log.fetch(`Fetching agent from ${source}`);
     log.detail(`agent path: ${agentPath}`);
     const result = await fetchAgent(source, { path: agentPath, githubRef, host });
-    reportCompatibilityIssues(result.agent, targets);
+    reportCompatibilityIssues(applyAgentModeOverride(result.agent, modeOverride), targets);
     preparedAgents.push({ result, agentPath });
   }
 
@@ -239,27 +252,12 @@ export interface AddOptions {
   platform?: string;
   global?: boolean;
   dryRun?: boolean;
+  mode?: string;
   path?: string;
   branch?: string;
   tag?: string;
   commit?: string;
   host?: string;
-}
-
-function getRequestedGitHubRef(options: AddOptions): Omit<GitHubRef, "resolvedCommit"> | undefined {
-  const refs = [
-    options.branch ? { type: "branch" as const, value: options.branch } : undefined,
-    options.tag ? { type: "tag" as const, value: options.tag } : undefined,
-    options.commit ? { type: "commit" as const, value: options.commit } : undefined,
-  ].filter((value): value is { type: "branch" | "tag" | "commit"; value: string } => {
-    return value !== undefined;
-  });
-
-  if (refs.length > 1) {
-    throw new Error("Use exactly one of --branch, --tag, or --commit");
-  }
-
-  return refs[0];
 }
 
 function resolveStoredGitHubRef(
@@ -281,6 +279,7 @@ export async function addCommand(
   options: AddOptions,
 ): Promise<void> {
   try {
+    const modeOverride = validateAgentMode(options.mode);
     const githubRef = getRequestedGitHubRef(options);
 
     // 1. If --path is specified, use direct fetch (no discovery)
@@ -370,6 +369,7 @@ export async function addCommand(
       selectedPaths,
       githubRef,
       targets,
+      modeOverride,
       options.host,
     );
 
@@ -380,20 +380,22 @@ export async function addCommand(
       }
 
       const { result, agentPath } = preparedAgent;
+      const effectiveAgent = applyAgentModeOverride(result.agent, modeOverride);
 
       if (options.dryRun) {
         previewAgentInstall(
-          result.agent,
+          effectiveAgent,
           targets,
           isGlobal,
           result.resolvedSource,
           agentPath,
+          modeOverride,
         );
         continue;
       }
 
       await installAgent(
-        result.agent,
+        effectiveAgent,
         targets,
         projectRoot,
         isGlobal,
@@ -403,6 +405,7 @@ export async function addCommand(
         result.repositoryUrl,
         result.sourceUrl,
         resolveStoredGitHubRef(githubRef, result.resolvedCommit),
+        modeOverride,
       );
     }
 
@@ -435,6 +438,7 @@ async function addSingleAgent(
   conversion?: ConvertibleGitHubAgent,
 ): Promise<void> {
   const requestedGitHubRef = getRequestedGitHubRef(options);
+  const modeOverride = validateAgentMode(options.mode);
   const fetched = prefetched
     ? { result: prefetched, conversion }
     : await (async () => {
@@ -484,12 +488,14 @@ async function addSingleAgent(
 
   const { result, conversion: activeConversion } = fetched;
 
-  const { agent, sourceType, resolvedSource } = result;
+  const agent = applyAgentModeOverride(result.agent, modeOverride);
+  const { sourceType, resolvedSource } = result;
   const { name, description } = agent.frontmatter;
 
   log.sync("Preparing agent");
   log.detail(source);
   log.detail(`${name} - ${description}`);
+  log.detail(`mode: ${getEffectiveAgentMode(result.agent, modeOverride)}`);
   if (activeConversion) {
     log.detail(`converted from: ${activeConversion.sourcePath}`);
   }
@@ -507,7 +513,7 @@ async function addSingleAgent(
     log.install("Preparing dry run");
     log.detail("No changes will be written.");
     log.spacer();
-    previewAgentInstall(agent, targets, isGlobal, resolvedSource, options.path ?? "");
+    previewAgentInstall(agent, targets, isGlobal, resolvedSource, options.path ?? "", modeOverride);
     log.spacer();
     log.success(`Dry run complete for ${name}`);
     log.detail(`Platforms: ${targets.map((target) => target.name).join(", ")}`);
@@ -529,6 +535,7 @@ async function addSingleAgent(
     result.repositoryUrl,
     result.sourceUrl,
     resolveStoredGitHubRef(requestedGitHubRef, result.resolvedCommit),
+    modeOverride,
   );
 
   log.spacer();

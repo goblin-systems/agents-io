@@ -408,4 +408,60 @@ describe("sync command", () => {
     );
     expect(loggedMessages.some((message) => message.includes("Sync complete"))).toBe(true);
   });
+
+  test("reapplies a persisted mode override during sync repairs", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "agent-source");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(sourceDir, { recursive: true });
+    await writeProjectMarker(projectDir);
+
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Sync mode agent",
+        mode: "subagent",
+        body: "\n# Test Agent\n\nInstalled from sync.\n",
+      }),
+      "utf-8",
+    );
+
+    const result = await fetchAgent(sourceDir);
+    const hash = hashContent(result.agent.raw);
+
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: sourceDir,
+            sourceType: "local",
+            sourceUrl: sourceDir,
+            agentPath: "",
+            installedAt: "2026-03-29T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash,
+            platformHashes: { opencode: hash },
+            modeOverride: "primary",
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    process.chdir(projectDir);
+    await syncCommand();
+
+    const installedFile = await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8");
+    const opencodeConfig = JSON.parse(await readFile(join(projectDir, "opencode.json"), "utf-8")) as {
+      agent?: Record<string, { mode?: string }>;
+    };
+
+    expect(installedFile).toContain("mode: primary");
+    expect(opencodeConfig.agent?.["test-agent"]?.mode).toBe("primary");
+  });
 });

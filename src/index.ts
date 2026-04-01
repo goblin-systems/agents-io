@@ -14,6 +14,7 @@ program
   .option("--platform <platform>", "target platform", undefined)
   .option("--global", "install globally")
   .option("--dry-run", "preview add without writing changes")
+  .option("--mode <mode>", "override installed mode (primary or subagent)")
   .option("--path <path>", "subfolder in repo")
   .option("--host <host>", "GitHub Enterprise host for owner/repo shorthand")
   .option("--branch <name>", "pin a GitHub install to a branch")
@@ -31,6 +32,19 @@ program
   .action(async (options: Record<string, unknown>) => {
     const { listCommand } = await import("./commands/list.js");
     await listCommand(options);
+  });
+
+program
+  .command("fetch <source>")
+  .description("Fetch or refresh a source repository without installing")
+  .option("--path <path>", "agent path hint for local sources")
+  .option("--host <host>", "GitHub Enterprise host for owner/repo shorthand")
+  .option("--branch <name>", "pin a GitHub fetch to a branch")
+  .option("--tag <name>", "pin a GitHub fetch to a tag")
+  .option("--commit <sha>", "pin a GitHub fetch to a commit")
+  .action(async (source: string, options: Record<string, unknown>) => {
+    const { fetchCommand } = await import("./commands/fetch.js");
+    await fetchCommand(source, options);
   });
 
 program

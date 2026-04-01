@@ -98,7 +98,13 @@ export async function createCachedGitHubRepository(options: {
   owner: string;
   repo: string;
   files: Record<string, string>;
-}): Promise<{ workingRepoDir: string; bareRemoteDir: string; cacheDir: string }> {
+  skipCacheSeed?: boolean;
+}): Promise<{
+  workingRepoDir: string;
+  bareRemoteDir: string;
+  cacheDir: string;
+  expectedCacheDir: string;
+}> {
   const workingRepoDir = join(options.rootDir, "working-repo");
   const bareRemoteDir = join(options.rootDir, "remote.git");
 
@@ -112,13 +118,22 @@ export async function createCachedGitHubRepository(options: {
 
   await commitAll(workingRepoDir, "Initial commit");
   await createBareRemoteFromWorkingRepo(workingRepoDir, bareRemoteDir);
-  const cacheDir = await seedRepositoryCache(
+  const expectedCacheDir = join(
     options.configDir,
-    options.host ?? "github.com",
-    options.owner,
-    options.repo,
-    bareRemoteDir,
+    "repositories",
+    encodeURIComponent(options.host ?? "github.com"),
+    encodeURIComponent(options.owner),
+    encodeURIComponent(options.repo),
   );
+  const cacheDir = options.skipCacheSeed
+    ? expectedCacheDir
+    : await seedRepositoryCache(
+      options.configDir,
+      options.host ?? "github.com",
+      options.owner,
+      options.repo,
+      bareRemoteDir,
+    );
 
-  return { workingRepoDir, bareRemoteDir, cacheDir };
+  return { workingRepoDir, bareRemoteDir, cacheDir, expectedCacheDir };
 }

@@ -671,6 +671,77 @@ describe("update command", () => {
     expect(entry.platformHashes).toEqual({ opencode: entry.hash });
   });
 
+  test("reapplies a persisted mode override during update", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "agent-source");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(sourceDir, { recursive: true });
+    await writeProjectMarker(projectDir);
+
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Initial description",
+        mode: "subagent",
+        body: "\n# Test Agent\n\nInitial body.\n",
+      }),
+      "utf-8",
+    );
+
+    const initialResult = await fetchAgent(sourceDir);
+    await opencodeAdapter.install({ agent: initialResult.agent, projectDir, global: false });
+
+    const initialHash = hashContent(initialResult.agent.raw);
+    await writeLockFile(
+      {
+        version: 1,
+        agents: {
+          "test-agent": {
+            source: sourceDir,
+            sourceType: "local",
+            sourceUrl: sourceDir,
+            agentPath: "",
+            installedAt: "2026-03-28T00:00:00.000Z",
+            platforms: ["opencode"],
+            hash: initialHash,
+            platformHashes: { opencode: initialHash },
+            modeOverride: "primary",
+          },
+        },
+      },
+      false,
+      projectDir,
+    );
+
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "test-agent",
+        description: "Updated description",
+        mode: "subagent",
+        body: "\n# Test Agent\n\nUpdated body.\n",
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+    await updateCommand("test-agent");
+
+    const installedFile = await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8");
+    const opencodeConfig = JSON.parse(await readFile(join(projectDir, "opencode.json"), "utf-8")) as {
+      agent?: Record<string, { mode?: string }>;
+    };
+    const lockFile = await readLockFile(false, projectDir);
+
+    expect(installedFile).toContain("mode: primary");
+    expect(installedFile).toContain("Updated description");
+    expect(opencodeConfig.agent?.["test-agent"]?.mode).toBe("primary");
+    expect(lockFile.agents["test-agent"]?.modeOverride).toBe("primary");
+  });
+
   test("refreshes cached GitHub repositories during update", async () => {
     tempDir = await makeTempDir();
     process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");

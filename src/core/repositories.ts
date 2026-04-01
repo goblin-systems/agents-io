@@ -32,6 +32,12 @@ export interface ConvertibleRepositoryAgent {
   resolvedCommit: string;
 }
 
+export interface RepositoryCacheResult {
+  cachePath: string;
+  resolvedCommit: string;
+  action: "cloned" | "refreshed";
+}
+
 export class InvalidRepositorySourceError extends Error {
   constructor(source: string) {
     super(
@@ -335,8 +341,9 @@ export function normalizeGitHubSource(
 export async function ensureRepositoryCache(
   source: NormalizedGitHubRepositorySource,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
-): Promise<string> {
+): Promise<RepositoryCacheResult> {
   const cachePath = buildCachePath(source);
+  let action: RepositoryCacheResult["action"] = "refreshed";
 
   try {
     await refreshRepository(cachePath);
@@ -344,11 +351,16 @@ export async function ensureRepositoryCache(
     await rm(cachePath, { recursive: true, force: true });
     await cloneRepository(source, cachePath);
     await refreshRepository(cachePath);
+    action = "cloned";
   }
 
-  await checkoutRepositoryRef(cachePath, githubRef);
+  const resolvedCommit = await checkoutRepositoryRef(cachePath, githubRef);
 
-  return cachePath;
+  return {
+    cachePath,
+    resolvedCommit,
+    action,
+  };
 }
 
 export async function fetchRepositoryAgent(
@@ -356,7 +368,7 @@ export async function fetchRepositoryAgent(
   agentPath?: string,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
 ): Promise<{ content: string; settings: AgentSettings; resolvedCommit: string }> {
-  const cachePath = await ensureRepositoryCache(source, githubRef);
+  const { cachePath, resolvedCommit } = await ensureRepositoryCache(source, githubRef);
   const markdownPath = sanitizeRepositoryPath(agentPath);
   const content = await readCachedFile(cachePath, markdownPath);
 
@@ -365,7 +377,6 @@ export async function fetchRepositoryAgent(
   }
 
   const jsonContent = await readCachedFile(cachePath, agentJsonPath(markdownPath));
-  const resolvedCommit = await runGit(["rev-parse", "HEAD"], cachePath);
 
   return {
     content,
@@ -378,7 +389,7 @@ export async function discoverRepositoryAgents(
   source: NormalizedGitHubRepositorySource,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
 ): Promise<DiscoveredAgent[]> {
-  const cachePath = await ensureRepositoryCache(source, githubRef);
+  const { cachePath } = await ensureRepositoryCache(source, githubRef);
   const discovered: DiscoveredAgent[] = [];
 
   for (const entry of await listDirectory(cachePath)) {
@@ -421,7 +432,7 @@ export async function findConvertibleRepositoryAgent(
   agentPath?: string,
   githubRef?: Omit<GitHubRef, "resolvedCommit">,
 ): Promise<ConvertibleRepositoryAgent | null> {
-  const cachePath = await ensureRepositoryCache(source, githubRef);
+  const { cachePath } = await ensureRepositoryCache(source, githubRef);
   const basePath = agentPath?.replace(/^\/+|\/+$/g, "");
   const matches: Array<{
     sourceFile: ConvertibleRepositoryAgentFile;

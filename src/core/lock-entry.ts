@@ -2,6 +2,7 @@ import claudeCodeAdapter from "../adapters/claude-code.js";
 import codexAdapter from "../adapters/codex.js";
 import kiroAdapter from "../adapters/kiro.js";
 import opencodeAdapter from "../adapters/opencode.js";
+import { applyAgentModeOverride, getStoredModeOverride } from "./agent-mode.js";
 import { fetchAgent } from "./fetch.js";
 import { hashContent } from "./registry.js";
 import type { Adapter, GitHubRef, InstalledAgent, Platform } from "../types.js";
@@ -69,7 +70,7 @@ export async function fetchLockEntryAgent(entry: InstalledAgent, mode: LockEntry
   });
 
   return {
-    agent: result.agent,
+    agent: applyAgentModeOverride(result.agent, getStoredModeOverride(entry)),
     hash: hashContent(result.agent.raw),
     githubRef:
       entry.githubRef && result.resolvedCommit

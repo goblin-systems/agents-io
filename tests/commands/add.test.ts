@@ -177,8 +177,97 @@ describe("add command (local sources)", () => {
     expect(loggedMessages.some((message) => message.includes(`resolved source: ${resolve(sourceDir)}`))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("scope: project"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("platforms: opencode, claude-code"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("mode: subagent"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("Dry run complete for local-agent"))).toBe(true);
     expect(await pathExists(join(projectDir, "agents"))).toBe(false);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
+  });
+
+  test("persists a mode override and applies it during install output", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "local-agent");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "local-agent",
+        description: "Direct local agent",
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+
+    await addCommand(sourceDir, { platform: "opencode", global: false, mode: "primary" });
+
+    const installedFile = await readFile(join(projectDir, "agents", "local-agent.md"), "utf-8");
+    const opencodeConfig = JSON.parse(await readFile(join(projectDir, "opencode.json"), "utf-8")) as {
+      agent?: Record<string, { mode?: string }>;
+    };
+    const lockFile = await readLockFile(false, projectDir);
+    const entry = lockFile.agents["local-agent"];
+
+    expect(installedFile).toContain("mode: primary");
+    expect(opencodeConfig.agent?.["local-agent"]?.mode).toBe("primary");
+    expect(entry.modeOverride).toBe("primary");
+    expect(loggedMessages).toContain("| mode: primary");
+  });
+
+  test("uses mode override in dry-run output and compatibility warnings", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "mode-warning-agent");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "mode-warning-agent",
+        description: "Mode warning agent",
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+    await addCommand(sourceDir, {
+      platform: "codex",
+      global: false,
+      dryRun: true,
+      mode: "primary",
+    });
+
+    expect(loggedMessages).toContain("!  Compatibility warnings for mode-warning-agent");
+    expect(loggedMessages.some((message) => message.includes("[codex]") && message.includes("`mode: primary`"))).toBe(true);
+    expect(loggedMessages).toContain("| mode: primary");
+  });
+
+  test("rejects invalid mode overrides", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "invalid-mode-agent");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "invalid-mode-agent",
+        description: "Invalid mode agent",
+      }),
+      "utf-8",
+    );
+
+    process.chdir(projectDir);
+
+    await expect(
+      addCommand(sourceDir, { platform: "opencode", global: false, mode: "leader" }),
+    ).rejects.toThrow("EXIT:1");
+
+    expect(errorMessages.some((message) => message.includes("Invalid mode 'leader'. Expected one of: primary, subagent"))).toBe(true);
     expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
   });
 

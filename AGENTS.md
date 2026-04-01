@@ -36,10 +36,12 @@ backlog/
   epic-*.md            Active backlog items
   done/                Completed epics moved here
 src/
-  index.ts              CLI entry point — commander program with 5 commands (add, list, remove, init, update)
+  index.ts              CLI entry point — commander program for add, fetch, validate, doctor, sync, list, remove, init, update, and search
   types.ts              Shared TypeScript interfaces (Adapter, ParsedAgent, LockFile, etc.)
   commands/
     add.ts              `agents-io add <source>` — fetch + install + register in lock file
+    fetch.ts            `agents-io fetch <source>` — clone or refresh a source repository cache without installing
+    validate.ts         `agents-io validate <source>` — validate fetch + parse rules without installing
     list.ts             `agents-io list` — display installed agents (project + global)
     remove.ts           `agents-io remove <name>` — uninstall from adapters + deregister
     init.ts             `agents-io init [name]` — scaffold a new agent template directory

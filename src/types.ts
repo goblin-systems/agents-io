@@ -7,10 +7,12 @@ export interface DiscoveredAgent {
   path: string;
 }
 
+export type AgentMode = "primary" | "subagent";
+
 export interface AgentFrontmatter {
   name: string;
   description: string;
-  mode?: "primary" | "subagent";
+  mode?: AgentMode;
   color?: string;
   model?: string;
   tools?: Record<string, boolean>;
@@ -64,6 +66,7 @@ export interface InstalledAgent {
   platforms: Platform[];
   hash: string;
   platformHashes?: Partial<Record<Platform, string>>;
+  modeOverride?: AgentMode;
 }
 
 export interface LockFile {

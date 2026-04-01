@@ -15,8 +15,8 @@ function writeLine(
   console.log(text);
 }
 
-function writeDetail(msg = ""): void {
-  writeLine("|", msg);
+function writeDetail(msg = "", stream: "stdout" | "stderr" = "stdout"): void {
+  writeLine("|", msg, stream);
 }
 
 function colorIcon(icon: string, stream: "stdout" | "stderr"): string {
@@ -53,14 +53,11 @@ function writeStep(icon: string, msg: string, stream: "stdout" | "stderr" = "std
 }
 
 export const log = {
-  plain(msg: string): void {
-    console.log(msg);
+  spacer(stream: "stdout" | "stderr" = "stdout"): void {
+    writeDetail("", stream);
   },
-  spacer(): void {
-    writeDetail();
-  },
-  detail(msg = ""): void {
-    writeDetail(msg);
+  detail(msg = "", stream: "stdout" | "stderr" = "stdout"): void {
+    writeDetail(msg, stream);
   },
   fetch(msg: string): void {
     writeStep("⇅", msg);

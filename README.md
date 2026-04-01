@@ -71,6 +71,9 @@ npx agents-io list --verbose
 # Validate an agent without installing it
 npx agents-io validate owner/repo
 
+# Fetch or refresh a source repository without installing it
+npx agents-io fetch owner/repo --path reviewer
+
 # Diagnose the current install state
 npx agents-io doctor
 npx agents-io doctor --global
@@ -193,6 +196,33 @@ npx agents-io validate C:\Users\you\agents\reviewer
 |------|-------------|
 | `--path <path>` | Subfolder within the repo or local source that contains `agent.md` |
 
+### `fetch <source>`
+
+Fetches or refreshes the source only. For GitHub sources, `fetch` clones or updates the same local repository cache used by `add`, honors any requested ref pin, and then stops. It does not install anything, prompt, validate agent payloads, or modify lock files or tool config.
+
+For local filesystem sources, `fetch` acts as a readiness check. It confirms the local path exists, reports that nothing was cloned, and exits successfully.
+
+```bash
+npx agents-io fetch owner/repo
+npx agents-io fetch owner/repo --path agents/reviewer
+npx agents-io fetch owner/repo --branch release
+npx agents-io fetch owner/repo --tag v1.2.0
+npx agents-io fetch owner/repo --commit 0123abcd
+npx agents-io fetch owner/repo --host github.mycompany.com
+npx agents-io fetch ./path/to/agent
+npx agents-io fetch C:\Users\you\agents\reviewer
+```
+
+For GitHub sources, `--path` is accepted for CLI consistency but does not change fetch behavior because repository fetch stops at clone/refresh time.
+
+| Flag | Description |
+|------|-------------|
+| `--path <path>` | Optional path hint. Reported for local sources and ignored for GitHub cache fetches |
+| `--host <host>` | GitHub Enterprise host for owner/repo shorthand |
+| `--branch <name>` | Pin a GitHub fetch to a branch |
+| `--tag <name>` | Pin a GitHub fetch to a tag |
+| `--commit <sha>` | Pin a GitHub fetch to an exact commit |
+
 ### `doctor`
 
 Checks recorded install health for one scope without writing any files or fetching anything from the network. By default it checks the project scope. Pass `--global` to inspect the global scope instead.
@@ -311,18 +341,20 @@ When you run `update --platform <platform>`, agents-io updates only that adapter
 
 ## Which command to use
 
+- Use `fetch` to clone or refresh a source repository cache without installing it.
 - Use `validate` to check whether a source agent definition can be fetched and parsed before installation.
+- Use `add --dry-run` to preview install scope, targets, and compatibility without writing install artifacts.
 - Use `doctor` to diagnose local install health for one scope after installation.
 - Use `sync` to recreate the project-scoped installs recorded in a committed `agents-io-lock.json` without changing that lock file.
 - Use `list --verbose` to inspect lock file paths and stored registry hash state for both scopes.
 - Use `update --check` to compare installed agents with their original source and see whether newer content is available.
 
-In short: `validate` checks source inputs, `doctor` checks local install state, `sync` recreates project installs from the lock file, `list --verbose` shows recorded metadata, and `update --check` checks source freshness.
+In short: `fetch` gets the source repo ready locally, `validate` checks source validity, `add --dry-run` previews an install plan, `doctor` checks local install state, `sync` recreates project installs from the lock file, `list --verbose` shows recorded metadata, and `update --check` checks source freshness.
 
 ## How it works
 
 1. You run `npx agents-io add owner/repo`
-2. agents-io fetches `agent.md` from the repo (via `raw.githubusercontent.com`) or reads it from a local path
+2. agents-io clones or refreshes a cached copy of the source repository, then reads `agent.md` from that cache when needed
 3. It detects which AI coding tools are present in your project
 4. It converts the agent definition into each tool's native format and writes the files
 5. It tracks the installation in `agents-io-lock.json`
