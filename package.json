@@ -41,11 +41,11 @@
   "author": "Sergej Popov",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/goblin-systems/agents-io.git"
+    "url": "git+https://github.com/Sergej-Popov/agents-io.git"
   },
-  "homepage": "https://github.com/goblin-systems/agents-io#readme",
+  "homepage": "https://github.com/Sergej-Popov/agents-io#readme",
   "bugs": {
-    "url": "https://github.com/goblin-systems/agents-io/issues"
+    "url": "https://github.com/Sergej-Popov/agents-io/issues"
   },
   "engines": {
     "node": ">=18.0.0"

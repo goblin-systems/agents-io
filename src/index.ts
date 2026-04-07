@@ -110,9 +110,10 @@ program
 program
   .command("search [query]")
   .description("Search for agents on GitHub")
-  .action(async (query?: string) => {
+  .option("--verify", "verify whether each result is directly installable or only best-effort convertible")
+  .action(async (query: string | undefined, options: Record<string, unknown>) => {
     const { searchCommand } = await import("./commands/search.js");
-    await searchCommand(query);
+    await searchCommand(query, options);
   });
 
 program.parse(process.argv);

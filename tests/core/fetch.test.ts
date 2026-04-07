@@ -35,60 +35,60 @@ describe("fetchAgent (local)", () => {
   test("normalizes supported GitHub source formats", () => {
     const expected = {
       host: "github.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
-      canonical: "goblin-systems/agents-io-team",
-      sourceUrl: "https://github.com/goblin-systems/agents-io-team",
-      httpsUrl: "https://github.com/goblin-systems/agents-io-team.git",
-      cloneUrl: "https://github.com/goblin-systems/agents-io-team.git",
+      canonical: "Sergej-Popov/agents-io-team",
+      sourceUrl: "https://github.com/Sergej-Popov/agents-io-team",
+      httpsUrl: "https://github.com/Sergej-Popov/agents-io-team.git",
+      cloneUrl: "https://github.com/Sergej-Popov/agents-io-team.git",
     };
 
-    expect(normalizeGitHubSource("goblin-systems/agents-io-team")).toEqual(expected);
+    expect(normalizeGitHubSource("Sergej-Popov/agents-io-team")).toEqual(expected);
     expect(
-      normalizeGitHubSource("https://github.com/goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("https://github.com/Sergej-Popov/agents-io-team.git"),
     ).toEqual(expected);
     expect(
-      normalizeGitHubSource("git@github.com:goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("git@github.com:Sergej-Popov/agents-io-team.git"),
     ).toEqual({
       ...expected,
-      cloneUrl: "git@github.com:goblin-systems/agents-io-team.git",
+      cloneUrl: "git@github.com:Sergej-Popov/agents-io-team.git",
     });
     expect(
-      normalizeGitHubSource("ssh://git@github.com/goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("ssh://git@github.com/Sergej-Popov/agents-io-team.git"),
     ).toEqual({
       ...expected,
-      cloneUrl: "ssh://git@github.com/goblin-systems/agents-io-team.git",
+      cloneUrl: "ssh://git@github.com/Sergej-Popov/agents-io-team.git",
     });
   });
 
   test("normalizes GitHub Enterprise shorthand and URL-based sources", () => {
     const expected = {
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
-      canonical: "goblin-systems/agents-io-team",
-      sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
-      httpsUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
-      cloneUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+      canonical: "Sergej-Popov/agents-io-team",
+      sourceUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team",
+      httpsUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
+      cloneUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
     };
 
     expect(
-      normalizeGitHubSource("goblin-systems/agents-io-team", { host: "github.mycompany.com" }),
+      normalizeGitHubSource("Sergej-Popov/agents-io-team", { host: "github.mycompany.com" }),
     ).toEqual(expected);
     expect(
-      normalizeGitHubSource("https://github.mycompany.com/goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("https://github.mycompany.com/Sergej-Popov/agents-io-team.git"),
     ).toEqual(expected);
     expect(
-      normalizeGitHubSource("git@github.mycompany.com:goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("git@github.mycompany.com:Sergej-Popov/agents-io-team.git"),
     ).toEqual({
       ...expected,
-      cloneUrl: "git@github.mycompany.com:goblin-systems/agents-io-team.git",
+      cloneUrl: "git@github.mycompany.com:Sergej-Popov/agents-io-team.git",
     });
     expect(
-      normalizeGitHubSource("ssh://git@github.mycompany.com/goblin-systems/agents-io-team.git"),
+      normalizeGitHubSource("ssh://git@github.mycompany.com/Sergej-Popov/agents-io-team.git"),
     ).toEqual({
       ...expected,
-      cloneUrl: "ssh://git@github.mycompany.com/goblin-systems/agents-io-team.git",
+      cloneUrl: "ssh://git@github.mycompany.com/Sergej-Popov/agents-io-team.git",
     });
   });
 
@@ -218,7 +218,7 @@ describe("fetchAgent (local)", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: tempDir,
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -246,20 +246,20 @@ describe("fetchAgent (local)", () => {
 
     try {
       for (const source of [
-        "goblin-systems/agents-io-team",
-        "https://github.com/goblin-systems/agents-io-team.git",
-        "git@github.com:goblin-systems/agents-io-team.git",
-        "ssh://git@github.com/goblin-systems/agents-io-team.git",
+        "Sergej-Popov/agents-io-team",
+        "https://github.com/Sergej-Popov/agents-io-team.git",
+        "git@github.com:Sergej-Popov/agents-io-team.git",
+        "ssh://git@github.com/Sergej-Popov/agents-io-team.git",
       ]) {
         const result = await fetchAgent(source);
         expect(result.sourceType).toBe("github");
-        expect(result.resolvedSource).toBe("goblin-systems/agents-io-team");
-        expect(result.sourceUrl).toBe("https://github.com/goblin-systems/agents-io-team");
+        expect(result.resolvedSource).toBe("Sergej-Popov/agents-io-team");
+        expect(result.sourceUrl).toBe("https://github.com/Sergej-Popov/agents-io-team");
         expect(result.agent.frontmatter.name).toBe("team-agent");
         expect(result.agent.settings.model).toBe("claude-sonnet-4");
       }
 
-      const nestedResult = await fetchAgent("goblin-systems/agents-io-team", {
+      const nestedResult = await fetchAgent("Sergej-Popov/agents-io-team", {
         path: "agents/reviewer",
       });
       expect(nestedResult.agent.frontmatter.name).toBe("reviewer-agent");
@@ -275,7 +275,7 @@ describe("fetchAgent (local)", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -299,7 +299,7 @@ describe("fetchAgent (local)", () => {
     const releaseCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
     await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
 
-    const result = await fetchAgent("goblin-systems/agents-io-team", {
+    const result = await fetchAgent("Sergej-Popov/agents-io-team", {
       githubRef: { type: "branch", value: "release" },
     });
 
@@ -315,7 +315,7 @@ describe("fetchAgent (local)", () => {
       rootDir: join(tempDir, "enterprise-repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -327,14 +327,14 @@ describe("fetchAgent (local)", () => {
 
     expect(repository.cacheDir).toContain(join("repositories", "github.mycompany.com"));
 
-    const result = await fetchAgent("goblin-systems/agents-io-team", {
+    const result = await fetchAgent("Sergej-Popov/agents-io-team", {
       host: "github.mycompany.com",
     });
 
     expect(result.sourceType).toBe("github");
-    expect(result.resolvedSource).toBe("goblin-systems/agents-io-team");
-    expect(result.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
-    expect(result.repositoryUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team.git");
+    expect(result.resolvedSource).toBe("Sergej-Popov/agents-io-team");
+    expect(result.sourceUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team");
+    expect(result.repositoryUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team.git");
     expect(result.agent.frontmatter.description).toBe("Enterprise repository-backed agent");
   });
 
@@ -346,7 +346,7 @@ describe("fetchAgent (local)", () => {
       rootDir: join(tempDir, "enterprise-repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -357,15 +357,15 @@ describe("fetchAgent (local)", () => {
     });
 
     for (const source of [
-      "https://github.mycompany.com/goblin-systems/agents-io-team.git",
-      "git@github.mycompany.com:goblin-systems/agents-io-team.git",
-      "ssh://git@github.mycompany.com/goblin-systems/agents-io-team.git",
+      "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
+      "git@github.mycompany.com:Sergej-Popov/agents-io-team.git",
+      "ssh://git@github.mycompany.com/Sergej-Popov/agents-io-team.git",
     ]) {
       const result = await fetchAgent(source);
-      expect(result.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
+      expect(result.sourceUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team");
       expect(result.repositoryUrl).toBe(
         source.startsWith("https://")
-          ? "https://github.mycompany.com/goblin-systems/agents-io-team.git"
+          ? "https://github.mycompany.com/Sergej-Popov/agents-io-team.git"
           : source,
       );
       expect(result.agent.frontmatter.description).toBe("Enterprise direct-source agent");
@@ -379,23 +379,23 @@ describe("fetchAgent (local)", () => {
     await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "support-bot",
       files: {
         "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
       },
     });
 
-    const result = await convertGitHubAgent("goblin-systems/support-bot");
+    const result = await convertGitHubAgent("Sergej-Popov/support-bot");
 
     expect(result).not.toBeNull();
     expect(result?.sourceFile).toBe("AGENTS.md");
     expect(result?.sourcePath).toBe("AGENTS.md");
     expect(result?.result.agent.frontmatter.name).toBe("support-bot");
     expect(result?.result.agent.frontmatter.description).toBe(
-      "Best-effort conversion from AGENTS.md in goblin-systems/support-bot",
+      "Best-effort conversion from AGENTS.md in Sergej-Popov/support-bot",
     );
-    expect(result?.result.sourceUrl).toBe("https://github.com/goblin-systems/support-bot");
+    expect(result?.result.sourceUrl).toBe("https://github.com/Sergej-Popov/support-bot");
     expect(result?.result.agent.body).toContain("You help triage incoming issues.");
   });
 
@@ -406,7 +406,7 @@ describe("fetchAgent (local)", () => {
     await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "ambiguous-agent",
       files: {
         "AGENTS.md": "# Agent instructions\n\nOne format.\n",
@@ -414,7 +414,7 @@ describe("fetchAgent (local)", () => {
       },
     });
 
-    const result = await convertGitHubAgent("goblin-systems/ambiguous-agent");
+    const result = await convertGitHubAgent("Sergej-Popov/ambiguous-agent");
 
     expect(result).toBeNull();
   });

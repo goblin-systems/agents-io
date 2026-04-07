@@ -245,7 +245,7 @@ describe("discoverAgents (edge cases)", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: tempDir,
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agents/reviewer/agent.md": buildAgentContent({
@@ -268,7 +268,7 @@ describe("discoverAgents (edge cases)", () => {
     }) as typeof fetch;
 
     try {
-      const agents = await discoverAgents("git@github.com:goblin-systems/agents-io-team.git");
+      const agents = await discoverAgents("git@github.com:Sergej-Popov/agents-io-team.git");
 
       expect(agents.map((agent) => agent.name).sort()).toEqual([
         "releaser-agent",
@@ -290,7 +290,7 @@ describe("discoverAgents (edge cases)", () => {
       rootDir: tempDir,
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agents/reviewer/agent.md": buildAgentContent({
@@ -301,7 +301,7 @@ describe("discoverAgents (edge cases)", () => {
     });
 
     const agents = await discoverAgents(
-      "goblin-systems/agents-io-team",
+      "Sergej-Popov/agents-io-team",
       undefined,
       "github.mycompany.com",
     );

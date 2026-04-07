@@ -565,7 +565,7 @@ describe("update command", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -592,7 +592,7 @@ describe("update command", () => {
 
     await runGit(["checkout", "main"], repository.workingRepoDir);
 
-    const initialResult = await fetchAgent("goblin-systems/agents-io-team", {
+    const initialResult = await fetchAgent("Sergej-Popov/agents-io-team", {
       githubRef: { type: "branch", value: "release" },
     });
     await opencodeAdapter.install({
@@ -607,9 +607,9 @@ describe("update command", () => {
         version: 1,
         agents: {
           "test-agent": {
-            source: "goblin-systems/agents-io-team",
+            source: "Sergej-Popov/agents-io-team",
             sourceType: "github",
-            sourceUrl: "https://github.com/goblin-systems/agents-io-team",
+            sourceUrl: "https://github.com/Sergej-Popov/agents-io-team",
             agentPath: "",
             installedAt: "2026-03-28T00:00:00.000Z",
             platforms: ["opencode"],
@@ -753,7 +753,7 @@ describe("update command", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -770,7 +770,7 @@ describe("update command", () => {
       "Initial repository description",
     );
 
-    const initialResult = await fetchAgent("goblin-systems/agents-io-team");
+    const initialResult = await fetchAgent("Sergej-Popov/agents-io-team");
     await opencodeAdapter.install({
       agent: initialResult.agent,
       projectDir,
@@ -783,9 +783,9 @@ describe("update command", () => {
         version: 1,
         agents: {
           "test-agent": {
-            source: "goblin-systems/agents-io-team",
+            source: "Sergej-Popov/agents-io-team",
             sourceType: "github",
-            sourceUrl: "https://github.com/goblin-systems/agents-io-team",
+            sourceUrl: "https://github.com/Sergej-Popov/agents-io-team",
             agentPath: "",
             installedAt: "2026-03-28T00:00:00.000Z",
             platforms: ["opencode"],
@@ -837,7 +837,7 @@ describe("update command", () => {
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -848,7 +848,7 @@ describe("update command", () => {
       },
     });
 
-    const initialResult = await fetchAgent("goblin-systems/agents-io-team", {
+    const initialResult = await fetchAgent("Sergej-Popov/agents-io-team", {
       host: "github.mycompany.com",
     });
     await opencodeAdapter.install({
@@ -863,10 +863,10 @@ describe("update command", () => {
         version: 1,
         agents: {
           "test-agent": {
-            source: "goblin-systems/agents-io-team",
+            source: "Sergej-Popov/agents-io-team",
             sourceType: "github",
-            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
-            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            sourceUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
             host: "github.mycompany.com",
             agentPath: "",
             installedAt: "2026-03-28T00:00:00.000Z",
@@ -899,8 +899,8 @@ describe("update command", () => {
     const entry = lockFile.agents["test-agent"];
     const installedFile = await readFile(join(projectDir, "agents", "test-agent.md"), "utf-8");
 
-    expect(entry.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
-    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team.git");
+    expect(entry.sourceUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team");
+    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team.git");
     expect(entry.host).toBe("github.mycompany.com");
     expect(installedFile).toContain("Updated enterprise description");
     expect(installedFile).toContain("Updated enterprise body.");

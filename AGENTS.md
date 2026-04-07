@@ -203,22 +203,35 @@ The test suite uses `bun:test`. Run tests with:
 bun test
 ```
 
-Tests live in `tests/` mirroring the `src/` structure:
+Tests currently live in `tests/` mirroring the `src/` structure:
 
-- `tests/helpers.ts` — shared test utilities (`buildAgentContent`, `makeTempDir`, `cleanTempDir`)
-- `tests/core/parse.test.ts` — frontmatter parsing and validation
-- `tests/core/registry.test.ts` — lock file CRUD operations
-- `tests/adapters/opencode.test.ts` — OpenCode adapter install/uninstall
+- `tests/helpers.ts` — shared test utilities (`buildAgentContent`, `captureConsoleMessage`, temp-dir helpers, cached repo helpers)
 - `tests/adapters/claude-code.test.ts` — Claude Code adapter install/uninstall
 - `tests/adapters/codex.test.ts` — Codex adapter section management
 - `tests/adapters/kiro.test.ts` — Kiro adapter install/uninstall
+- `tests/adapters/opencode.test.ts` — OpenCode adapter install/uninstall
+- `tests/commands/add.test.ts` — `add` command coverage, including dry-run and compatibility gating
+- `tests/commands/doctor.test.ts` — `doctor` command install-health coverage
+- `tests/commands/fetch.test.ts` — `fetch` command coverage
+- `tests/commands/init.test.ts` — `init` command scaffold coverage
+- `tests/commands/list.test.ts` — `list` command output and verbose registry reporting
+- `tests/commands/remove.test.ts` — `remove` command scope/platform handling and dry-run coverage
+- `tests/commands/search.test.ts` — `search` command coverage, including `--verify` output
+- `tests/commands/sync.test.ts` — `sync` command lock-file driven install/repair coverage
+- `tests/commands/update.test.ts` — `update` command coverage
+- `tests/commands/validate.test.ts` — `validate` command source validation coverage
+- `tests/core/discover.test.ts` — repository agent discovery coverage
+- `tests/core/fetch.test.ts` — fetch-layer coverage for local path resolution and fetch behavior
+- `tests/core/parse.test.ts` — frontmatter parsing and validation
+- `tests/core/platform-compatibility.test.ts` — platform compatibility checks and warnings
+- `tests/core/registry.test.ts` — lock file CRUD operations
+- `tests/core/search-verify.test.ts` — search verification coverage using source resolution rules
+- `tests/core/search.test.ts` — GitHub search API mapping and error handling
+- `tests/utils/logger.test.ts` — logger formatting coverage
 
 All adapter and registry tests use real temp directories (no mocking). Tests clean up after themselves.
 
-When adding new functionality, add corresponding tests. Priority areas for new tests:
-- Integration tests for the `init` command (scaffold output verification)
-- Integration tests for the `update` command
-- Fetch layer tests (local path resolution — network tests should be skipped)
+When adding new functionality, add corresponding tests and keep this section aligned with the current test suite.
 
 ## Do NOT
 

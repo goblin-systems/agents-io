@@ -317,7 +317,7 @@ describe("sync command", () => {
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -328,7 +328,7 @@ describe("sync command", () => {
       },
     });
 
-    const result = await fetchAgent("goblin-systems/agents-io-team", {
+    const result = await fetchAgent("Sergej-Popov/agents-io-team", {
       host: "github.mycompany.com",
     });
     const hash = hashContent(result.agent.raw);
@@ -338,10 +338,10 @@ describe("sync command", () => {
         version: 1,
         agents: {
           "test-agent": {
-            source: "goblin-systems/agents-io-team",
+            source: "Sergej-Popov/agents-io-team",
             sourceType: "github",
-            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
-            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            sourceUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
             host: "github.mycompany.com",
             agentPath: "",
             installedAt: "2026-03-29T00:00:00.000Z",
@@ -368,7 +368,7 @@ describe("sync command", () => {
     const updatedCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
     await runGit(["push", "origin", "main"], repository.workingRepoDir);
 
-    const updatedResult = await fetchAgent("goblin-systems/agents-io-team", {
+    const updatedResult = await fetchAgent("Sergej-Popov/agents-io-team", {
       host: "github.mycompany.com",
     });
     const updatedHash = hashContent(updatedResult.agent.raw);
@@ -378,10 +378,10 @@ describe("sync command", () => {
         version: 1,
         agents: {
           "test-agent": {
-            source: "goblin-systems/agents-io-team",
+            source: "Sergej-Popov/agents-io-team",
             sourceType: "github",
-            sourceUrl: "https://github.mycompany.com/goblin-systems/agents-io-team",
-            repositoryUrl: "https://github.mycompany.com/goblin-systems/agents-io-team.git",
+            sourceUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team",
+            repositoryUrl: "https://github.mycompany.com/Sergej-Popov/agents-io-team.git",
             host: "github.mycompany.com",
             agentPath: "",
             installedAt: "2026-03-29T00:00:00.000Z",

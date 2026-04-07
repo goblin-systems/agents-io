@@ -1,3 +1,9 @@
+import { resolveAgentSource } from "./resolve-agent-source.js";
+import {
+  InvalidRepositorySourceError,
+  RepositoryAgentNotFoundError,
+} from "./repositories.js";
+
 export interface SearchResult {
   /** "owner/repo" */
   repo: string;
@@ -9,6 +15,23 @@ export interface SearchResult {
   updatedAt: string;
   /** GitHub HTML URL */
   url: string;
+}
+
+export type SearchVerificationKind =
+  | "root"
+  | "discovered"
+  | "convertible-root"
+  | "unverified";
+
+export interface SearchVerification {
+  kind: SearchVerificationKind;
+  installable: boolean;
+  summary: string;
+  agentPaths?: string[];
+}
+
+export interface VerifiedSearchResult extends SearchResult {
+  verification: SearchVerification;
 }
 
 interface GitHubSearchResponseItem {
@@ -64,6 +87,60 @@ function mapItem(item: GitHubSearchResponseItem): SearchResult {
     stars: item.stargazers_count,
     updatedAt: item.updated_at,
     url: item.html_url,
+  };
+}
+
+function formatInstallableSummary(
+  resolvedSource: Awaited<ReturnType<typeof resolveAgentSource>>,
+): SearchVerification {
+  if (resolvedSource.kind === "root") {
+    return {
+      kind: "root",
+      installable: true,
+      summary: "installable at repo root",
+    };
+  }
+
+  if (resolvedSource.kind === "discovered") {
+    return {
+      kind: "discovered",
+      installable: true,
+      summary: `installable via discovery (${resolvedSource.agents.length} agent${resolvedSource.agents.length === 1 ? "" : "s"})`,
+      agentPaths: resolvedSource.agents.map((agent) => agent.path),
+    };
+  }
+
+  return {
+    kind: "convertible-root",
+    installable: false,
+    summary: `best-effort convertible from ${resolvedSource.conversion.sourcePath}`,
+  };
+}
+
+function formatUnverifiedSummary(error: unknown): SearchVerification {
+  if (error instanceof RepositoryAgentNotFoundError) {
+    return {
+      kind: "unverified",
+      installable: false,
+      summary: "not installable by current agents-io source rules",
+    };
+  }
+
+  if (error instanceof InvalidRepositorySourceError) {
+    return {
+      kind: "unverified",
+      installable: false,
+      summary: error.message,
+    };
+  }
+
+  return {
+    kind: "unverified",
+    installable: false,
+    summary:
+      error instanceof Error
+        ? `verification failed: ${error.message}`
+        : `verification failed: ${String(error)}`,
   };
 }
 
@@ -126,4 +203,27 @@ export async function searchAgents(query?: string): Promise<SearchResult[]> {
   const data = (await response.json()) as GitHubSearchResponse;
 
   return data.items.map(mapItem);
+}
+
+export async function verifySearchResults(
+  results: SearchResult[],
+): Promise<VerifiedSearchResult[]> {
+  const verifiedResults: VerifiedSearchResult[] = [];
+
+  for (const result of results) {
+    try {
+      const resolvedSource = await resolveAgentSource(result.repo);
+      verifiedResults.push({
+        ...result,
+        verification: formatInstallableSummary(resolvedSource),
+      });
+    } catch (error) {
+      verifiedResults.push({
+        ...result,
+        verification: formatUnverifiedSummary(error),
+      });
+    }
+  }
+
+  return verifiedResults;
 }

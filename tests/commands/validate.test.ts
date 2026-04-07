@@ -185,7 +185,7 @@ describe("validate command", () => {
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -198,10 +198,10 @@ describe("validate command", () => {
     process.chdir(projectDir);
     captureOutput();
 
-    await validateCommand("goblin-systems/agents-io-team", { host: "github.mycompany.com" });
+    await validateCommand("Sergej-Popov/agents-io-team", { host: "github.mycompany.com" });
 
     expect(loggedMessages.some((message) => message.includes("Agent 'enterprise-agent' is valid"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("resolved source: goblin-systems/agents-io-team"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("resolved source: Sergej-Popov/agents-io-team"))).toBe(true);
     await expect(access(join(projectDir, "agents-io-lock.json"))).rejects.toBeDefined();
   });
 });

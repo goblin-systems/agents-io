@@ -98,7 +98,7 @@ describe("fetch command", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "README.md": "# repository without agent payload\n",
@@ -106,12 +106,12 @@ describe("fetch command", () => {
       skipCacheSeed: true,
     });
 
-    await fetchCommand("goblin-systems/agents-io-team");
+    await fetchCommand("Sergej-Popov/agents-io-team");
 
-    expect(loggedMessages.some((message) => message.includes("Fetching repository goblin-systems/agents-io-team"))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("Cloned repository cache for goblin-systems/agents-io-team"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Fetching repository Sergej-Popov/agents-io-team"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Cloned repository cache for Sergej-Popov/agents-io-team"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes(`cache path: ${repository.expectedCacheDir}`))).toBe(true);
-    expect(loggedMessages.some((message) => message.includes("resolved source: https://github.com/goblin-systems/agents-io-team"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("resolved source: https://github.com/Sergej-Popov/agents-io-team"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("ref: default branch"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("resolved commit:"))).toBe(true);
     expect(errorMessages).toEqual([]);
@@ -127,7 +127,7 @@ describe("fetch command", () => {
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "README.md": "# initial\n",
@@ -141,12 +141,12 @@ describe("fetch command", () => {
     const releaseCommit = await runGit(["rev-parse", "HEAD"], repository.workingRepoDir);
     await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
 
-    await fetchCommand("goblin-systems/agents-io-team", {
+    await fetchCommand("Sergej-Popov/agents-io-team", {
       host: "github.mycompany.com",
       branch: "release",
     });
 
-    expect(loggedMessages.some((message) => message.includes("Refreshed repository cache for goblin-systems/agents-io-team"))).toBe(true);
+    expect(loggedMessages.some((message) => message.includes("Refreshed repository cache for Sergej-Popov/agents-io-team"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes("ref: branch: release"))).toBe(true);
     expect(loggedMessages.some((message) => message.includes(`resolved commit: ${releaseCommit}`))).toBe(true);
     expect(errorMessages).toEqual([]);

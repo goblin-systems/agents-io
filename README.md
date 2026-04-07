@@ -25,7 +25,7 @@ Use `npx agents-io@latest ...` when you want `npx` to fetch and run the latest p
 If you want a strong first example after installing the CLI, start with `Manage`:
 
 ```bash
-npx agents-io@latest add goblin-systems/agents-io-team --path manage
+npx agents-io@latest add Sergej-Popov/agents-io-team --path manage
 ```
 
 `Manage` is the manager and orchestrator for the team. You give it an objective, and it defines success conditions and definition of done, breaks the work into workstreams, assigns specialist agents, reviews outcomes, tracks risks and decisions, and keeps execution moving until the work is accepted complete. 
@@ -35,7 +35,7 @@ npx agents-io@latest add goblin-systems/agents-io-team --path manage
 You can also install the full team:
 
 ```bash
-npx agents-io@latest add goblin-systems/agents-io-team
+npx agents-io@latest add Sergej-Popov/agents-io-team
 ```
 
 Other notable examples:
@@ -142,7 +142,7 @@ When `--platform` is omitted, agents-io auto-detects which tools you use by chec
 
 GitHub refs are optional. If you omit them, agents-io tracks the repository's default branch and `update` follows that branch over time. If you pass exactly one of `--branch`, `--tag`, or `--commit`, agents-io records that pin in `agents-io-lock.json` and future `update` runs stay on that ref instead of drifting back to the default branch.
 
-`add --dry-run` follows the same fetch, discovery, prompt, and validation flow as a real install, but it stops before any files are written. The preview reports the resolved source, chosen scope, and target platforms so you can verify the plan first.
+`add --dry-run` follows the same fetch, discovery, prompt, conversion, and compatibility flow as a real install, but it stops before any files are written. The preview reports the resolved source, chosen scope, and target platforms so you can verify the plan first.
 
 For GitHub sources only, if the repo looks strongly agent-like but does not ship a compatible `agent.md`, `add` can offer an explicit best-effort conversion from a known non-native file such as `AGENTS.md` or `CLAUDE.md`. The CLI never converts silently: it prompts first, warns that conversion may fail or behave unexpectedly, and continues only if the generated candidate passes normal validation.
 
@@ -152,6 +152,8 @@ When `add` already knows the exact target platforms, it also runs lightweight co
 - Kiro warns when some enabled generic tools are ignored during mapping
 - Codex warns when frontmatter or `agent.json` settings will be dropped during conversion into `AGENTS.md`
 - non-OpenCode targets warn when `mode: primary` cannot be preserved
+
+The selected platform set is atomic during `add`: if any selected platform has an error-level incompatibility, the whole add fails and nothing is installed. That includes compatible selected platforms, `--dry-run`, interactive selection, and best-effort GitHub conversion flows. Failure output lists the incompatible selected platforms and also calls out any compatible selected platforms that were not installed because the set failed together.
 
 ### `list`
 
@@ -338,6 +340,21 @@ For GitHub installs, `update` uses the stored source plus any recorded pin metad
 When you run `update --platform <platform>`, agents-io updates only that adapter's files but keeps the full `installedFor` metadata intact.
 
 `update --check` uses the same comparison logic as a real update, but it stays inspection-only.
+
+### `search [query]`
+
+Searches GitHub repositories tagged with the `agents-io` topic.
+
+```bash
+npx agents-io search review
+npx agents-io search review --verify
+```
+
+`search --verify` post-processes each GitHub topic result through the same source-resolution flow used by `add` and `validate`. Verified output shows whether a repo is installable at the root, installable through discovered subpaths, only best-effort convertible, or not currently installable by the CLI.
+
+| Flag | Description |
+|------|-------------|
+| `--verify` | Verify whether each search result is directly installable or only best-effort convertible |
 
 ## Which command to use
 

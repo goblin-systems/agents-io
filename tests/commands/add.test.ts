@@ -379,7 +379,7 @@ describe("add command (local sources)", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -394,7 +394,7 @@ describe("add command (local sources)", () => {
 
     process.chdir(projectDir);
 
-    await addCommand("git@github.com:goblin-systems/agents-io-team.git", {
+    await addCommand("git@github.com:Sergej-Popov/agents-io-team.git", {
       platform: "opencode",
       global: false,
     });
@@ -404,10 +404,10 @@ describe("add command (local sources)", () => {
     const entry = lockFile.agents["team-agent"];
 
     expect(installedFile).toContain("Team agent from cached repository");
-    expect(entry.source).toBe("goblin-systems/agents-io-team");
+    expect(entry.source).toBe("Sergej-Popov/agents-io-team");
     expect(entry.sourceType).toBe("github");
-    expect(entry.sourceUrl).toBe("https://github.com/goblin-systems/agents-io-team");
-    expect(entry.repositoryUrl).toBe("git@github.com:goblin-systems/agents-io-team.git");
+    expect(entry.sourceUrl).toBe("https://github.com/Sergej-Popov/agents-io-team");
+    expect(entry.repositoryUrl).toBe("git@github.com:Sergej-Popov/agents-io-team.git");
     expect(entry.host).toBe("github.com");
   });
 
@@ -422,7 +422,7 @@ describe("add command (local sources)", () => {
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
       host: "github.mycompany.com",
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -434,7 +434,7 @@ describe("add command (local sources)", () => {
 
     process.chdir(projectDir);
 
-    await addCommand("goblin-systems/agents-io-team", {
+    await addCommand("Sergej-Popov/agents-io-team", {
       platform: "opencode",
       global: false,
       host: "github.mycompany.com",
@@ -445,10 +445,10 @@ describe("add command (local sources)", () => {
     const entry = lockFile.agents["team-agent"];
 
     expect(installedFile).toContain("Enterprise team agent from cached repository");
-    expect(entry.source).toBe("goblin-systems/agents-io-team");
+    expect(entry.source).toBe("Sergej-Popov/agents-io-team");
     expect(entry.sourceType).toBe("github");
-    expect(entry.sourceUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team");
-    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/goblin-systems/agents-io-team.git");
+    expect(entry.sourceUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team");
+    expect(entry.repositoryUrl).toBe("https://github.mycompany.com/Sergej-Popov/agents-io-team.git");
     expect(entry.host).toBe("github.mycompany.com");
   });
 
@@ -462,7 +462,7 @@ describe("add command (local sources)", () => {
     const repository = await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "agents-io-team",
       files: {
         "agent.md": buildAgentContent({
@@ -486,7 +486,7 @@ describe("add command (local sources)", () => {
     await runGit(["push", "-u", "origin", "release"], repository.workingRepoDir);
 
     process.chdir(projectDir);
-    await addCommand("goblin-systems/agents-io-team", {
+    await addCommand("Sergej-Popov/agents-io-team", {
       platform: "opencode",
       global: false,
       branch: "release",
@@ -516,7 +516,7 @@ describe("add command (local sources)", () => {
         "run",
         cliPath,
         "add",
-        "goblin-systems/agents-io-team",
+        "Sergej-Popov/agents-io-team",
         "--branch",
         "release",
         "--tag",
@@ -545,7 +545,7 @@ describe("add command (local sources)", () => {
     await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "support-bot",
       files: {
         "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
@@ -555,7 +555,7 @@ describe("add command (local sources)", () => {
     selectResponses = ["convert"];
     process.chdir(projectDir);
 
-    await addCommand("goblin-systems/support-bot", {
+    await addCommand("Sergej-Popov/support-bot", {
       platform: "opencode",
       global: false,
     });
@@ -570,7 +570,7 @@ describe("add command (local sources)", () => {
     expect(installedFile).toContain("name: support-bot");
     expect(installedFile).toContain("Best-effort conversion from AGENTS.md");
     expect(installedFile).toContain("You help triage incoming issues.");
-    expect(entry.source).toBe("goblin-systems/support-bot");
+    expect(entry.source).toBe("Sergej-Popov/support-bot");
     expect(entry.sourceType).toBe("github");
     expect(entry.agentPath).toBe("");
     expect(loggedMessages).toContain("| converted from: AGENTS.md");
@@ -602,8 +602,45 @@ describe("add command (local sources)", () => {
 
     await expect(addCommand(sourceDir, { platform: "kiro", global: false })).rejects.toThrow("EXIT:1");
 
-    expect(errorMessages.some((message) => message.includes("Compatibility check failed for kiro-hard-fail"))).toBe(true);
-    expect(errorMessages.some((message) => message.includes("[kiro]"))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("Compatibility check failed for kiro-hard-fail."))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("The selected platform set is atomic, so nothing was installed."))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("Incompatible selected platforms: [kiro]"))).toBe(true);
+    expect(await pathExists(join(projectDir, ".kiro"))).toBe(false);
+    expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
+  });
+
+  test("fails atomically for mixed selected platforms and reports compatible platforms not installed", async () => {
+    tempDir = await makeTempDir();
+    const projectDir = join(tempDir, "project");
+    const sourceDir = join(tempDir, "mixed-platform-agent");
+
+    await setupProject(projectDir);
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "agent.md"),
+      buildAgentContent({
+        name: "mixed-platform-agent",
+        description: "Mixed platform compatibility agent",
+        extra: {
+          tools: {
+            fetch: true,
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    selectResponses = ["local"];
+    multiselectResponses = [["opencode", "kiro"]];
+    process.chdir(projectDir);
+
+    await expect(addCommand(sourceDir, { dryRun: true })).rejects.toThrow("EXIT:1");
+
+    expect(errorMessages.some((message) => message.includes("Compatibility check failed for mixed-platform-agent."))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("The selected platform set is atomic, so nothing was installed."))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("Incompatible selected platforms: [kiro]"))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("Compatible selected platforms not installed: opencode."))).toBe(true);
+    expect(await pathExists(join(projectDir, "agents"))).toBe(false);
     expect(await pathExists(join(projectDir, ".kiro"))).toBe(false);
     expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
   });
@@ -716,6 +753,8 @@ describe("add command (local sources)", () => {
 
     await expect(addCommand(sourceRoot, { platform: "kiro", global: false })).rejects.toThrow("EXIT:1");
 
+    expect(errorMessages.some((message) => message.includes("Compatibility check failed for blocked-agent."))).toBe(true);
+    expect(errorMessages.some((message) => message.includes("The selected platform set is atomic, so nothing was installed."))).toBe(true);
     expect(await pathExists(join(projectDir, ".kiro", "agents", "safe-agent.json"))).toBe(false);
     expect(await pathExists(join(projectDir, ".kiro", "agents", "blocked-agent.json"))).toBe(false);
     expect(await pathExists(join(projectDir, "agents-io-lock.json"))).toBe(false);
@@ -731,7 +770,7 @@ describe("add command (local sources)", () => {
     await createCachedGitHubRepository({
       rootDir: join(tempDir, "repo-root"),
       configDir: process.env.AGENTS_IO_CONFIG_DIR,
-      owner: "goblin-systems",
+      owner: "Sergej-Popov",
       repo: "support-bot",
       files: {
         "AGENTS.md": "# Support Bot\n\nYou help triage incoming issues.\n",
@@ -741,7 +780,7 @@ describe("add command (local sources)", () => {
     selectResponses = ["skip"];
     process.chdir(projectDir);
 
-    await addCommand("goblin-systems/support-bot", {
+    await addCommand("Sergej-Popov/support-bot", {
       platform: "opencode",
       global: false,
     });

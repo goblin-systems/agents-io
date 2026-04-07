@@ -173,14 +173,20 @@ interface PreparedInstall {
   agentPath: string;
 }
 
-function reportCompatibilityIssues(agent: ParsedAgent, targets: Adapter[]): void {
+function formatPlatformIssueList(
+  issues: Array<{ platform: Platform; message: string }>,
+): string {
+  return issues.map((issue) => `[${issue.platform}] ${issue.message}`).join(" ");
+}
+
+function buildCompatibilityFailureMessage(agent: ParsedAgent, targets: Adapter[]): string {
   const issues = getPlatformCompatibilityIssues(
     agent,
     targets.map((target) => target.name),
   );
 
   if (issues.length === 0) {
-    return;
+    return "";
   }
 
   const warnings = issues.filter((issue) => issue.severity === "warning");
@@ -193,12 +199,26 @@ function reportCompatibilityIssues(agent: ParsedAgent, targets: Adapter[]): void
     }
   }
 
-  if (errors.length > 0) {
-    throw new Error(
-      `Compatibility check failed for ${agent.frontmatter.name}: ${errors
-        .map((error) => `[${error.platform}] ${error.message}`)
-        .join(" ")}`,
-    );
+  if (errors.length === 0) {
+    return "";
+  }
+
+  const incompatiblePlatforms = [...new Set(errors.map((issue) => issue.platform))];
+  const compatiblePlatforms = targets
+    .map((target) => target.name)
+    .filter((platform) => !incompatiblePlatforms.includes(platform));
+  const compatiblePlatformMessage = compatiblePlatforms.length > 0
+    ? ` Compatible selected platforms not installed: ${compatiblePlatforms.join(", ")}.`
+    : "";
+
+  return `Compatibility check failed for ${agent.frontmatter.name}. The selected platform set is atomic, so nothing was installed. Incompatible selected platforms: ${formatPlatformIssueList(errors)}.${compatiblePlatformMessage}`;
+}
+
+function reportCompatibilityIssues(agent: ParsedAgent, targets: Adapter[]): void {
+  const failureMessage = buildCompatibilityFailureMessage(agent, targets);
+
+  if (failureMessage) {
+    throw new Error(failureMessage);
   }
 }
 
