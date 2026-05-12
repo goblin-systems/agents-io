@@ -35,6 +35,17 @@ async function discoverLocal(source: string): Promise<DiscoveredAgent[]> {
   const basePath = resolve(source);
   const agents: DiscoveredAgent[] = [];
 
+  async function addParsedAgent(filePath: string, discoveredPath: string): Promise<void> {
+    const parsed = await tryParseAgent(filePath);
+    if (parsed) {
+      agents.push({
+        name: parsed.name,
+        description: parsed.description,
+        path: discoveredPath,
+      });
+    }
+  }
+
   let entries: string[];
   try {
     entries = await readdir(basePath);
@@ -68,36 +79,39 @@ async function discoverLocal(source: string): Promise<DiscoveredAgent[]> {
     }
   }
 
-  // Check agents/ subdirectory (2 levels deep)
-  const agentsDir = join(basePath, "agents");
-  try {
-    const info = await stat(agentsDir);
-    if (info.isDirectory()) {
-      const subEntries = await readdir(agentsDir);
-      for (const sub of subEntries) {
-        if (sub.startsWith(".")) continue;
+  // Check agents/ and .agents/ subdirectories.
+  for (const agentsDirectoryName of ["agents", ".agents"]) {
+    const agentsDir = join(basePath, agentsDirectoryName);
+    try {
+      const info = await stat(agentsDir);
+      if (info.isDirectory()) {
+        const subEntries = await readdir(agentsDir);
+        for (const sub of subEntries) {
+          if (sub.startsWith(".")) continue;
 
-        const subPath = join(agentsDir, sub);
-        try {
-          const subInfo = await stat(subPath);
-          if (!subInfo.isDirectory()) continue;
-        } catch {
-          continue;
-        }
+          await addParsedAgent(
+            join(agentsDir, sub),
+            `${agentsDirectoryName}/${sub}`,
+          );
 
-        const agentFile = join(subPath, "agent.md");
-        const parsed = await tryParseAgent(agentFile);
-        if (parsed) {
-          agents.push({
-            name: parsed.name,
-            description: parsed.description,
-            path: `agents/${sub}`,
-          });
+          const subPath = join(agentsDir, sub);
+          try {
+            const subInfo = await stat(subPath);
+            if (!subInfo.isDirectory()) continue;
+          } catch {
+            continue;
+          }
+
+          await addParsedAgent(join(subPath, "agent.md"), `${agentsDirectoryName}/${sub}`);
+          await addParsedAgent(
+            join(subPath, "agents.md"),
+            `${agentsDirectoryName}/${sub}/agents.md`,
+          );
         }
       }
+    } catch {
+      // agents/ or .agents/ directory doesn't exist — that's fine
     }
-  } catch {
-    // agents/ directory doesn't exist — that's fine
   }
 
   return agents;

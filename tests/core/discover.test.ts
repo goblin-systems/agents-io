@@ -82,6 +82,43 @@ describe("discoverAgents (local)", () => {
     expect(bar.path).toBe("agents/bar");
   });
 
+  test("discovers agents from supported agents and .agents layouts", async () => {
+    tempDir = await makeTempDir();
+
+    await mkdir(join(tempDir, "agents"), { recursive: true });
+    await writeFile(
+      join(tempDir, "agents", "flat-agent.md"),
+      buildAgentContent({ name: "flat-agent", description: "Flat agents file" }),
+    );
+
+    await mkdir(join(tempDir, ".agents", "hidden-dir"), { recursive: true });
+    await writeFile(
+      join(tempDir, ".agents", "hidden-dir", "agent.md"),
+      buildAgentContent({ name: "hidden-dir-agent", description: "Hidden dir agent" }),
+    );
+
+    await mkdir(join(tempDir, "agents", "plural-dir"), { recursive: true });
+    await writeFile(
+      join(tempDir, "agents", "plural-dir", "agents.md"),
+      buildAgentContent({ name: "plural-dir-agent", description: "Plural filename agent" }),
+    );
+
+    await mkdir(join(tempDir, ".agents"), { recursive: true });
+    await writeFile(
+      join(tempDir, ".agents", "flat-hidden.md"),
+      buildAgentContent({ name: "flat-hidden", description: "Flat hidden agents file" }),
+    );
+
+    const agents = await discoverAgents(tempDir);
+
+    expect(agents.map((agent) => [agent.name, agent.path]).sort()).toEqual([
+      ["flat-agent", "agents/flat-agent.md"],
+      ["flat-hidden", ".agents/flat-hidden.md"],
+      ["hidden-dir-agent", ".agents/hidden-dir"],
+      ["plural-dir-agent", "agents/plural-dir/agents.md"],
+    ]);
+  });
+
   test("discovers agents in both subdirs and agents/ folder", async () => {
     tempDir = await makeTempDir();
 
@@ -280,6 +317,45 @@ describe("discoverAgents (edge cases)", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test("discovers supported agents and .agents layouts from a cached GitHub repository", async () => {
+    tempDir = await makeTempDir();
+    process.env.AGENTS_IO_CONFIG_DIR = join(tempDir, "config");
+
+    await createCachedGitHubRepository({
+      rootDir: tempDir,
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "Sergej-Popov",
+      repo: "agents-io-layouts",
+      files: {
+        "agents/flat-agent.md": buildAgentContent({
+          name: "flat-agent",
+          description: "Flat agents file",
+        }),
+        ".agents/hidden-dir/agent.md": buildAgentContent({
+          name: "hidden-dir-agent",
+          description: "Hidden dir agent",
+        }),
+        "agents/plural-dir/agents.md": buildAgentContent({
+          name: "plural-dir-agent",
+          description: "Plural filename agent",
+        }),
+        ".agents/flat-hidden.md": buildAgentContent({
+          name: "flat-hidden",
+          description: "Flat hidden agents file",
+        }),
+      },
+    });
+
+    const agents = await discoverAgents("Sergej-Popov/agents-io-layouts");
+
+    expect(agents.map((agent) => [agent.name, agent.path]).sort()).toEqual([
+      ["flat-agent", "agents/flat-agent.md"],
+      ["flat-hidden", ".agents/flat-hidden.md"],
+      ["hidden-dir-agent", ".agents/hidden-dir"],
+      ["plural-dir-agent", "agents/plural-dir/agents.md"],
+    ]);
   });
 
   test("discovers agents from a cached GitHub Enterprise repository via --host shorthand resolution", async () => {

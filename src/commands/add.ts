@@ -331,7 +331,7 @@ export async function addCommand(
     }
 
     // 4. Root fetch missed — use discovered subdirectory agents
-    log.detail("No root agent.md found. Searching for agents in subdirectories...");
+    log.detail("No root agent.md found. Searching for agents in known repository locations...");
     const discovered = resolvedSource.agents;
 
     // 5. Multiselect prompt
@@ -488,6 +488,14 @@ async function addSingleAgent(
           throw error;
         }
 
+        if (candidate.hasFrontmatter) {
+          return {
+            result: candidate.result,
+            conversion: undefined,
+            agentPath: candidate.sourcePath,
+          };
+        }
+
         const shouldConvert = await promptGitHubConversion(source, candidate);
 
         if (!shouldConvert) {
@@ -498,6 +506,7 @@ async function addSingleAgent(
         return {
           result: candidate.result,
           conversion: candidate,
+          agentPath: options.path ?? "",
         };
       }
     })();
@@ -507,6 +516,7 @@ async function addSingleAgent(
   }
 
   const { result, conversion: activeConversion } = fetched;
+  const agentPath = "agentPath" in fetched ? fetched.agentPath : options.path ?? "";
 
   const agent = applyAgentModeOverride(result.agent, modeOverride);
   const { sourceType, resolvedSource } = result;
@@ -519,8 +529,8 @@ async function addSingleAgent(
   if (activeConversion) {
     log.detail(`converted from: ${activeConversion.sourcePath}`);
   }
-  if (options.path) {
-    log.detail(`agent path: ${options.path}`);
+  if (agentPath) {
+    log.detail(`agent path: ${agentPath}`);
   }
   log.spacer();
 
@@ -533,7 +543,7 @@ async function addSingleAgent(
     log.install("Preparing dry run");
     log.detail("No changes will be written.");
     log.spacer();
-    previewAgentInstall(agent, targets, isGlobal, resolvedSource, options.path ?? "", modeOverride);
+    previewAgentInstall(agent, targets, isGlobal, resolvedSource, agentPath, modeOverride);
     log.spacer();
     log.success(`Dry run complete for ${name}`);
     log.detail(`Platforms: ${targets.map((target) => target.name).join(", ")}`);
@@ -551,7 +561,7 @@ async function addSingleAgent(
     isGlobal,
     resolvedSource,
     sourceType,
-    options.path ?? "",
+    agentPath,
     result.repositoryUrl,
     result.sourceUrl,
     resolveStoredGitHubRef(requestedGitHubRef, result.resolvedCommit),

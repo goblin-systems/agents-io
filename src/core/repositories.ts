@@ -29,6 +29,7 @@ export interface ConvertibleRepositoryAgent {
   sourceFile: ConvertibleRepositoryAgentFile;
   sourcePath: string;
   content: string;
+  hasFrontmatter: boolean;
   resolvedCommit: string;
 }
 
@@ -141,11 +142,15 @@ function sanitizeRepositoryPath(agentPath?: string): string {
   }
 
   const trimmedPath = agentPath.replace(/^\/+|\/+$/g, "");
+  if (trimmedPath.endsWith(".md")) {
+    return trimmedPath;
+  }
+
   return posix.join(trimmedPath, "agent.md");
 }
 
 function agentJsonPath(agentMarkdownPath: string): string {
-  return agentMarkdownPath.replace(/agent\.md$/, "agent.json");
+  return agentMarkdownPath.replace(/\.md$/, ".json");
 }
 
 function tryParseSettings(content: string): AgentSettings {
@@ -266,6 +271,17 @@ async function listDirectory(cachePath: string, directoryPath?: string): Promise
     const targetPath = directoryPath ? join(cachePath, directoryPath) : cachePath;
     const entries = await readdir(targetPath, { withFileTypes: true });
     return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+async function listMarkdownFiles(cachePath: string, directoryPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(join(cachePath, directoryPath), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => entry.name);
   } catch {
     return [];
   }
@@ -392,35 +408,50 @@ export async function discoverRepositoryAgents(
   const { cachePath } = await ensureRepositoryCache(source, githubRef);
   const discovered: DiscoveredAgent[] = [];
 
+  function addParsedAgent(content: string | null, path: string): void {
+    if (!content) {
+      return;
+    }
+
+    const parsed = parseAgentMetadata(content);
+    if (parsed) {
+      discovered.push({ ...parsed, path });
+    }
+  }
+
   for (const entry of await listDirectory(cachePath)) {
     if (entry.startsWith(".") || entry === "agents") {
       continue;
     }
 
-    const content = await readCachedFile(cachePath, posix.join(entry, "agent.md"));
-    if (!content) {
-      continue;
-    }
-
-    const parsed = parseAgentMetadata(content);
-    if (parsed) {
-      discovered.push({ ...parsed, path: entry });
-    }
+    addParsedAgent(await readCachedFile(cachePath, posix.join(entry, "agent.md")), entry);
   }
 
-  for (const entry of await listDirectory(cachePath, "agents")) {
-    if (entry.startsWith(".")) {
-      continue;
+  for (const agentsDirectory of ["agents", ".agents"]) {
+    for (const entry of await listMarkdownFiles(cachePath, agentsDirectory)) {
+      if (entry.startsWith(".")) {
+        continue;
+      }
+
+      addParsedAgent(
+        await readCachedFile(cachePath, posix.join(agentsDirectory, entry)),
+        `${agentsDirectory}/${entry}`,
+      );
     }
 
-    const content = await readCachedFile(cachePath, posix.join("agents", entry, "agent.md"));
-    if (!content) {
-      continue;
-    }
+    for (const entry of await listDirectory(cachePath, agentsDirectory)) {
+      if (entry.startsWith(".")) {
+        continue;
+      }
 
-    const parsed = parseAgentMetadata(content);
-    if (parsed) {
-      discovered.push({ ...parsed, path: `agents/${entry}` });
+      addParsedAgent(
+        await readCachedFile(cachePath, posix.join(agentsDirectory, entry, "agent.md")),
+        `${agentsDirectory}/${entry}`,
+      );
+      addParsedAgent(
+        await readCachedFile(cachePath, posix.join(agentsDirectory, entry, "agents.md")),
+        `${agentsDirectory}/${entry}/agents.md`,
+      );
     }
   }
 
@@ -438,6 +469,7 @@ export async function findConvertibleRepositoryAgent(
     sourceFile: ConvertibleRepositoryAgentFile;
     sourcePath: string;
     content: string;
+    hasFrontmatter: boolean;
   }> = [];
 
   for (const sourceFile of CONVERTIBLE_AGENT_FILES) {
@@ -448,7 +480,12 @@ export async function findConvertibleRepositoryAgent(
       continue;
     }
 
-    matches.push({ sourceFile, sourcePath, content });
+    matches.push({
+      sourceFile,
+      sourcePath,
+      content,
+      hasFrontmatter: matter.test(content),
+    });
   }
 
   if (matches.length !== 1) {

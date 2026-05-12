@@ -3,7 +3,7 @@ export interface DiscoveredAgent {
   name: string;
   /** Agent description from frontmatter */
   description: string;
-  /** Relative path from source root to the directory containing agent.md */
+  /** Relative path from source root to the agent directory or markdown file */
   path: string;
 }
 

@@ -9,7 +9,7 @@ import {
 } from "./repositories.js";
 
 export interface FetchOptions {
-  /** Subfolder within the repo (or local path) that contains agent.md. */
+  /** Subfolder containing agent.md, or a direct markdown file path. */
   path?: string;
   /** Optional pinned GitHub ref. Ignored for local sources. */
   githubRef?: Omit<GitHubRef, "resolvedCommit">;
@@ -70,8 +70,10 @@ async function fetchLocalAgent(
   let agentFilePath: string;
 
   if (options?.path) {
-    // --path subfolder provided: look inside that subfolder
-    agentFilePath = join(absoluteBase, options.path.replace(/\/+$/, ""), "agent.md");
+    const normalizedPath = options.path.replace(/\/+$/, "");
+    agentFilePath = normalizedPath.endsWith(".md")
+      ? join(absoluteBase, normalizedPath)
+      : join(absoluteBase, normalizedPath, "agent.md");
   } else if (source.endsWith(".md")) {
     // Source is a direct .md file reference
     agentFilePath = absoluteBase;

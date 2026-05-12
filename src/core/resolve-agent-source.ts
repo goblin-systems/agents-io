@@ -54,6 +54,18 @@ export async function resolveAgentSource(
         const conversion = await convertGitHubAgent(source, { githubRef, host });
 
         if (conversion) {
+          if (conversion.hasFrontmatter) {
+            return {
+              kind: "discovered",
+              agents: [{
+                name: conversion.result.agent.frontmatter.name,
+                description: conversion.result.agent.frontmatter.description,
+                path: conversion.sourcePath,
+              }],
+              rootError: error,
+            };
+          }
+
           return {
             kind: "convertible-root",
             conversion,

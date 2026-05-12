@@ -64,7 +64,7 @@ export async function validateCommand(
       throw resolvedSource.rootError;
     }
 
-    log.detail("No root agent.md found. Searching for agents in subdirectories...");
+    log.detail("No root agent.md found. Searching for agents in known repository locations...");
     log.spacer();
 
     for (const discoveredAgent of resolvedSource.agents) {

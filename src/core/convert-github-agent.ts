@@ -9,6 +9,7 @@ import type { FetchResult } from "./fetch.js";
 export interface ConvertibleGitHubAgent {
   sourceFile: "AGENTS.md" | "CLAUDE.md";
   sourcePath: string;
+  hasFrontmatter: boolean;
   result: FetchResult;
 }
 
@@ -74,11 +75,14 @@ export async function convertGitHubAgent(
     ? `${normalizedSource.canonical}/${options.path}`
     : normalizedSource.canonical;
   const description = `Best-effort conversion from ${candidate.sourceFile} in ${locationLabel}`;
-  const raw = buildConvertedAgentContent(name, description, candidate.content);
+  const raw = candidate.hasFrontmatter
+    ? candidate.content
+    : buildConvertedAgentContent(name, description, candidate.content);
 
   return {
     sourceFile: candidate.sourceFile,
     sourcePath: candidate.sourcePath,
+    hasFrontmatter: candidate.hasFrontmatter,
     result: {
       agent: parseAgentFile(raw),
       sourceType: "github",

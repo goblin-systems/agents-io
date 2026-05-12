@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "path";
 import { verifySearchResults } from "../../src/core/search.js";
 import {
+  buildAgentContent,
   cleanTempDir,
   createCachedGitHubRepository,
   makeTempDir,
@@ -99,6 +100,19 @@ describe("verifySearchResults", () => {
       },
     });
 
+    await createCachedGitHubRepository({
+      rootDir: join(tempDir, "frontmatter-fallback-repo"),
+      configDir: process.env.AGENTS_IO_CONFIG_DIR,
+      owner: "erin",
+      repo: "frontmatter-fallback-agent",
+      files: {
+        "AGENTS.md": buildAgentContent({
+          name: "frontmatter-fallback-agent",
+          description: "Compatible fallback agent",
+        }),
+      },
+    });
+
     const verified = await verifySearchResults([
       {
         repo: "alice/root-agent",
@@ -128,9 +142,16 @@ describe("verifySearchResults", () => {
         updatedAt: "2026-01-04T00:00:00Z",
         url: "https://github.com/dave/not-installable",
       },
+      {
+        repo: "erin/frontmatter-fallback-agent",
+        description: "",
+        stars: 4,
+        updatedAt: "2026-01-05T00:00:00Z",
+        url: "https://github.com/erin/frontmatter-fallback-agent",
+      },
     ]);
 
-    expect(verified).toHaveLength(4);
+    expect(verified).toHaveLength(5);
     expect(verified[0]?.verification).toEqual({
       kind: "root",
       installable: true,
@@ -143,12 +164,18 @@ describe("verifySearchResults", () => {
     expect(verified[2]?.verification).toEqual({
       kind: "convertible-root",
       installable: false,
-      summary: "best-effort convertible from AGENTS.md",
+      summary: "best-effort convertible from AGENTS.md (no frontmatter detected)",
     });
     expect(verified[3]?.verification).toEqual({
       kind: "unverified",
       installable: false,
       summary: "not installable by current agents-io source rules",
+    });
+    expect(verified[4]?.verification).toEqual({
+      kind: "discovered",
+      installable: true,
+      summary: "installable via discovery (1 agent)",
+      agentPaths: ["AGENTS.md"],
     });
   }, 15000);
 

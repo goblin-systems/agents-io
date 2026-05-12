@@ -113,7 +113,7 @@ function formatInstallableSummary(
   return {
     kind: "convertible-root",
     installable: false,
-    summary: `best-effort convertible from ${resolvedSource.conversion.sourcePath}`,
+    summary: `best-effort convertible from ${resolvedSource.conversion.sourcePath} (${resolvedSource.conversion.hasFrontmatter ? "includes frontmatter" : "no frontmatter detected"})`,
   };
 }
 
